@@ -35,7 +35,8 @@
         .player-control-panel.active { border-color: #3B82F6; box-shadow: 0 0 15px rgba(59, 130, 246, 0.5); }
 
         input[type="color"] { min-width: 36px; height: 36px; padding: 2px; border: none; background: none; cursor: pointer; }
-        .clip-name-pvw { position: absolute; bottom: 8px; left: 8px; background-color: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 4px; font-size: 0.875rem; font-weight: 500;}
+        .clip-name-pvw { position: absolute; bottom: 8px; left: 8px; background-color: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 4px; font-size: 0.875rem; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+        .pvw-play-indicator { background-color: #22C55E; color: white; font-size: 0.7rem; font-weight: bold; padding: 1px 5px; border-radius: 3px; }
     </style>
 </head>
 <body class="p-0">
@@ -54,23 +55,23 @@
         <main id="main-content" class="flex-grow min-h-0">
             <!-- Pestaña de Control y PGM -->
             <div id="view-control" class="h-full" style="display: block;">
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
-                    <!-- Columna Izquierda: Controles y Librería -->
-                    <div class="lg:col-span-2 grid grid-rows-2 gap-6">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
+                    <!-- Columna Izquierda: PGM y Controles -->
+                    <div class="flex flex-col gap-6">
+                        <div class="bg-gray-900/50 p-4 rounded-lg">
+                            <h2 class="text-2xl font-semibold mb-4 text-center">Salida Program (PGM)</h2>
+                            <div id="program-monitor" class="grid grid-cols-2 gap-2"></div>
+                        </div>
                          <div class="bg-gray-900/50 p-4 rounded-lg">
                             <h2 class="text-2xl font-semibold mb-4">Controles de Discos</h2>
                             <div id="player-controls-container" class="grid grid-cols-1 md:grid-cols-2 gap-5 h-full"></div>
                          </div>
-                         <div class="bg-gray-900/50 p-4 rounded-lg flex flex-col min-h-0">
-                             <h2 class="text-2xl font-semibold mb-4 flex-shrink-0">Librería (Cargar en Disco <span id="target-disk-label">1</span>)</h2>
-                             <div id="control-clip-library" class="flex-grow overflow-y-auto space-y-3 pr-2"></div>
-                         </div>
                     </div>
 
-                    <!-- Columna Derecha: Salida PGM -->
-                    <div class="bg-gray-900/50 p-4 rounded-lg">
-                        <h2 class="text-2xl font-semibold mb-4 text-center">Salida Program (PGM)</h2>
-                        <div id="program-monitor" class="grid grid-cols-2 gap-2"></div>
+                    <!-- Columna Derecha: Librería -->
+                    <div class="bg-gray-900/50 p-4 rounded-lg flex flex-col min-h-0">
+                         <h2 class="text-2xl font-semibold mb-4 flex-shrink-0">Librería (Cargar en Disco <span id="target-disk-label">1</span>)</h2>
+                         <div id="control-clip-library" class="flex-grow overflow-y-auto space-y-3 pr-2"></div>
                     </div>
                 </div>
             </div>
@@ -174,7 +175,16 @@
                 const screen = document.createElement('div');
                 screen.className = `monitor-screen ${player.isPlaying ? 'playing' : (player.clip && player.elapsedTime > 0 && !player.isPlaying ? 'paused' : '')}`;
                 screen.style.backgroundColor = player.clip ? player.clip.color : '#000000';
-                screen.innerHTML = player.clip ? `<div class="clip-name-pvw">${player.clip.name}</div>` : `<div class="text-3xl text-gray-600 font-bold">EMPTY</div>`;
+                
+                if (player.clip) {
+                    screen.innerHTML = `
+                        <div class="clip-name-pvw">
+                            ${player.isPlaying ? '<span class="pvw-play-indicator">PLAY</span>' : ''}
+                            <span>${player.clip.name}</span>
+                        </div>`;
+                } else {
+                    screen.innerHTML = `<div class="text-3xl text-gray-600 font-bold">EMPTY</div>`;
+                }
                 container.appendChild(screen);
             });
         }
