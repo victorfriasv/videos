@@ -69,10 +69,8 @@
         </div>
 
         <main id="main-content" class="flex-grow min-h-0">
-            <!-- Pestaña de Control y PGM -->
             <div id="view-control" class="h-full" style="display: block;">
                 <div id="main-layout" class="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
-                    <!-- Columna Izquierda: Controles y PGM (scrollable) -->
                     <div id="left-column" class="flex flex-col gap-6 min-h-0 overflow-y-auto pr-2">
                         <div class="bg-gray-900/50 p-4 rounded-lg">
                             <h2 class="text-2xl font-semibold mb-4">Controles de Discos</h2>
@@ -89,15 +87,12 @@
                             <div id="program-monitor" class="grid grid-cols-2 gap-2 transition-transform duration-300 origin-top"></div>
                         </div>
                     </div>
-                    <!-- Columna Derecha: Librería (scrollable) -->
                     <div id="right-column" class="bg-gray-900/50 p-4 rounded-lg flex flex-col min-h-0">
                          <h2 class="text-2xl font-semibold mb-4 flex-shrink-0">Librería (Cargar en Disco <span id="target-disk-label">1</span>)</h2>
                          <div id="control-clip-library" class="flex-grow overflow-y-auto space-y-3 pr-2"></div>
                     </div>
                 </div>
             </div>
-
-            <!-- Pestaña Editor de Clips -->
             <div id="view-editor" class="h-full" style="display: none;">
                 <div class="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 h-full">
                     <div class="md:col-span-1 bg-gray-800 p-6 rounded-lg flex flex-col gap-8">
@@ -113,48 +108,32 @@
         </main>
     </div>
     
-    <!-- Vista de PVW (Pantalla completa) -->
     <div class="pvw-view h-screen w-screen p-2"><div id="preview-monitor" class="grid grid-cols-2 gap-2 w-full h-full"></div></div>
 
     <script type="module">
-        // --- IMPORTS DE FIREBASE ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- PEGA AQUÍ TU CONFIGURACIÓN DE FIREBASE ---
-        // Si vas a usar la aplicación fuera del entorno de la plataforma (ej. en GitHub Pages),
-        // reemplaza `null` con el objeto de configuración de tu proyecto de Firebase.
-        // Lo encontrarás en tu consola de Firebase > Configuración del proyecto > Tus apps > App web.
-        const firebaseConfig = {
-          apiKey: "AIzaSyBVxZ_iTU7xMk5HSFfS5b96HOYll7ZVzRc",
-          authDomain: "videos-38fcd.firebaseapp.com",
-          projectId: "videos-38fcd",
-          storageBucket: "videos-38fcd.firebasestorage.app",
-          messagingSenderId: "376645646912",
-          appId: "1:376645646912:web:eaac3f44bb0392cd4bfda5"
-        };
+        const USER_FIREBASE_CONFIG = null;
 
-        // --- SETUP ---
         const urlParams = new URLSearchParams(window.location.search);
         const isPvwMode = urlParams.get('view') === 'pvw';
         if (isPvwMode) { document.body.classList.add('pvw-mode'); }
         
-        // --- ESTADO LOCAL DE LA APP ---
         let appState = { clipGroups: {}, activeGroupName: '' };
         let players = Array(4).fill(null).map((_, i) => ({ id: i, clip: null, isPlaying: false, isLooping: false, elapsedTime: 0, intervalId: null }));
         let targetPlayerId = 0;
         let pgmScaleIndex = 2;
         const pgmScales = [0.75, 0.85, 1.0, 1.1, 1.25];
 
-        // --- CONFIGURACIÓN DE FIREBASE ---
         let db, auth, stateDocRef, unsubscribe;
+        let connectionTimeout;
         
         async function initializeFirebase() {
             const loadingOverlay = document.getElementById('loading-overlay');
             const errorElement = document.getElementById('loading-error');
             
-            // Determina qué configuración usar
             const configFromPlatform = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
             const firebaseConfig = configFromPlatform || USER_FIREBASE_CONFIG;
         
@@ -162,6 +141,11 @@
                 errorElement.textContent = "Error: Configuración de Firebase no encontrada. Pega tu configuración en el archivo HTML.";
                 return;
             }
+
+            connectionTimeout = setTimeout(() => {
+                errorElement.textContent = "La conexión está tardando demasiado. Revisa tu configuración de Firebase y las reglas de seguridad.";
+            }, 10000);
+
             try {
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
@@ -170,18 +154,17 @@
 
                 await signInAnonymously(auth);
                 
-                console.log("Firebase Authenticated User:", auth.currentUser.uid);
-
                 const appId = typeof __app_id !== 'undefined' ? __app_id : firebaseConfig.projectId || 'default-app-id';
                 const docPath = `/artifacts/${appId}/public/data/video_player_state`;
                 stateDocRef = doc(db, docPath, "main");
 
-                if (unsubscribe) unsubscribe(); // Detiene escuchas anteriores si las hubiera
+                if (unsubscribe) unsubscribe();
                 listenForStateChanges();
 
             } catch (error) {
                 console.error("Firebase initialization failed:", error);
                 errorElement.textContent = "Error al conectar con el servidor.";
+                clearTimeout(connectionTimeout);
             }
         }
         
@@ -199,6 +182,8 @@
         function listenForStateChanges() {
             if (!stateDocRef) return;
             unsubscribe = onSnapshot(stateDocRef, (docSnap) => {
+                clearTimeout(connectionTimeout);
+
                 if (docSnap.exists()) {
                     const data = docSnap.data();
                     if(data.appState) appState = data.appState;
@@ -211,7 +196,6 @@
                         const wasPlaying = localPlayer.isPlaying;
                         Object.assign(localPlayer, remotePlayer);
                         
-                        // Solo el controlador principal (no PVW) gestiona los intervalos
                         if (!isPvwMode) {
                             if (localPlayer.isPlaying && !wasPlaying) {
                                 clearInterval(localPlayer.intervalId);
@@ -223,22 +207,20 @@
                         }
                     });
                 } else if (!isPvwMode) {
-                    console.log("No state document found, creating one.");
                     createDefaultState();
                     updateStateInFirestore();
                 }
                 
-                const loadingOverlay = document.getElementById('loading-overlay');
-                if (loadingOverlay) loadingOverlay.style.opacity = '0';
-                
+                document.getElementById('loading-overlay').style.display = 'none';
                 const controlView = document.querySelector('.control-view');
                 if (controlView) controlView.style.opacity = '1';
 
                 renderAll();
             }, (error) => {
                 console.error("Error listening to state changes:", error);
+                clearTimeout(connectionTimeout);
                 const errorElement = document.getElementById('loading-error');
-                if(errorElement) errorElement.textContent = "Error de sincronización.";
+                if(errorElement) errorElement.textContent = "Error de sincronización. Revisa las reglas de seguridad de Firestore.";
             });
         }
         
@@ -333,7 +315,7 @@
         }
         
         // --- LOGIC FUNCTIONS ---
-        function tick(playerId) { const p = players[playerId]; if (!p.isPlaying || !p.clip) return; p.elapsedTime++; if (p.elapsedTime >= p.clip.duration) { p.isLooping ? (p.elapsedTime = 0, updateStateInFirestore()) : stopPlayback(playerId); } else { renderAll(); /* Update UI locally */ } }
+        function tick(playerId) { const p = players[playerId]; if (!p.isPlaying || !p.clip) return; p.elapsedTime++; if (p.elapsedTime >= p.clip.duration) { p.isLooping ? (p.elapsedTime = 0, updateStateInFirestore()) : stopPlayback(playerId); } else { renderAll(); } }
         function loadClip(clipName, playerId) { players[playerId].clip = getActiveClipLibrary().find(c => c.name === clipName) ? { ...getActiveClipLibrary().find(c => c.name === clipName) } : null; players[playerId].elapsedTime = 0; if(players[playerId].isPlaying) pausePlayback(playerId); else updateStateInFirestore(); }
         function togglePlayPause(playerId) { players[playerId].clip && (players[playerId].isPlaying ? pausePlayback(playerId) : startPlayback(playerId)); }
         function startPlayback(playerId) { const p = players[playerId]; if (p.isPlaying || !p.clip) return; if (p.elapsedTime >= p.clip.duration) p.elapsedTime = 0; p.isPlaying = true; updateStateInFirestore(); }
@@ -344,7 +326,6 @@
         function formatTime(s) { const min = Math.floor(s/60); const sec = Math.floor(s%60); return `${String(min).padStart(2,'0')}:${String(sec).padStart(2,'0')}`; }
         function getRandomColor() { return `#${Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')}`; }
 
-        // --- EVENT LISTENERS (Control view only) ---
         if (!isPvwMode) {
             const mainContent = document.getElementById('main-content');
             document.getElementById('tab-control').addEventListener('click', () => { document.getElementById('view-control').style.display = 'block'; document.getElementById('view-editor').style.display = 'none'; document.getElementById('tab-control').classList.add('active'); document.getElementById('tab-editor').classList.remove('active'); });
