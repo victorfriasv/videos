@@ -132,8 +132,15 @@
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const USER_FIREBASE_CONFIG = null;
-
+        const USER_FIREBASE_CONFIG = {
+          apiKey: "AIzaSyBVxZ_iTU7xMk5HSFfS5b96HOYll7ZVzRc",
+          authDomain: "videos-38fcd.firebaseapp.com",
+          projectId: "videos-38fcd",
+          storageBucket: "videos-38fcd.firebasestorage.app",
+          messagingSenderId: "376645646912",
+          appId: "1:376645646912:web:eaac3f44bb0392cd4bfda5"
+        };
+        
         const urlParams = new URLSearchParams(window.location.search);
         const isPvwMode = urlParams.get('view') === 'pvw';
         if (isPvwMode) { document.body.classList.add('pvw-mode'); }
