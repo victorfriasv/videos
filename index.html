@@ -111,60 +111,108 @@
     <!-- Vista de PVW (Pantalla completa) -->
     <div class="pvw-view h-screen w-screen p-2"><div id="preview-monitor" class="grid grid-cols-2 gap-2 w-full h-full"></div></div>
 
-    <script>
-    document.addEventListener('DOMContentLoaded', () => {
+    <script type="module">
+        // --- IMPORTS DE FIREBASE ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, updateDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
         // --- SETUP ---
         const urlParams = new URLSearchParams(window.location.search);
         const isPvwMode = urlParams.get('view') === 'pvw';
         if (isPvwMode) { document.body.classList.add('pvw-mode'); }
-
-        const channel = new BroadcastChannel('video_player_sync_unified');
         
+        // --- ESTADO LOCAL DE LA APP ---
         let appState = { clipGroups: {}, activeGroupName: '' };
         let players = Array(4).fill(null).map((_, i) => ({ id: i, clip: null, isPlaying: false, isLooping: false, elapsedTime: 0, intervalId: null }));
         let targetPlayerId = 0;
-        let pgmScaleIndex = 2; // Índice para el array de escalas de PGM
-        const pgmScales = [0.75, 0.85, 1.0, 1.1, 1.25]; // Diferentes niveles de zoom
+        let pgmScaleIndex = 2;
+        const pgmScales = [0.75, 0.85, 1.0, 1.1, 1.25];
 
-        // --- STATE & SYNC ---
-        function broadcastState() {
-            channel.postMessage(JSON.stringify({ players, allState: appState }));
-        }
+        // --- CONFIGURACIÓN DE FIREBASE ---
+        let db, auth, stateDocRef;
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
         
-        channel.onmessage = (event) => {
+        async function initializeFirebase() {
+            if (!firebaseConfig) {
+                console.error("Firebase config is missing.");
+                return;
+            }
             try {
-                const receivedData = JSON.parse(event.data);
-                if (receivedData.allState) {
-                    appState = receivedData.allState;
-                    players = receivedData.players;
-                    renderAll();
-                }
-            } catch (e) { /* Ignore */ }
-        };
-        
-        function loadStateFromStorage() {
-            const storedState = localStorage.getItem('videoPlayerAppState_v2');
-            if (storedState) {
-                appState = JSON.parse(storedState);
-                if (!appState.clipGroups || !appState.activeGroupName || Object.keys(appState.clipGroups).length === 0) {
-                    createDefaultState();
-                }
-            } else { createDefaultState(); }
-            saveStateToStorage();
-        }
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                setLogLevel('debug');
 
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                
+                console.log("Firebase Authenticated User:", auth.currentUser.uid);
+
+                const docPath = `/artifacts/${appId}/public/data/video_player_state`;
+                stateDocRef = doc(db, docPath, "main");
+
+                listenForStateChanges();
+
+            } catch (error) {
+                console.error("Firebase initialization failed:", error);
+            }
+        }
+        
+        // --- GESTIÓN DE ESTADO CON FIRESTORE ---
+        async function updateStateInFirestore() {
+            if (!stateDocRef) return;
+            // Detener los intervalos antes de guardar para no almacenar IDs de intervalo en Firestore
+            const stateToSave = {
+                appState,
+                players: players.map(p => ({ ...p, intervalId: null })) 
+            };
+            try {
+                await setDoc(stateDocRef, stateToSave, { merge: true });
+            } catch (error) {
+                console.error("Error updating state in Firestore:", error);
+            }
+        }
+        
+        function listenForStateChanges() {
+            if (!stateDocRef) return;
+            onSnapshot(stateDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    appState = data.appState;
+                    // Restaurar estado de los reproductores, pero no los intervalos
+                    const wasPlaying = players.map(p => p.isPlaying);
+                    players = data.players.map((p, i) => ({
+                         ...p,
+                         isPlaying: wasPlaying[i] && p.clip ? true : false // Keep playing status if it was playing locally
+                    }));
+                } else {
+                    // Si el documento no existe, lo creamos con el estado por defecto
+                    console.log("No state document found, creating one.");
+                    createDefaultState();
+                    updateStateInFirestore();
+                }
+                renderAll();
+            }, (error) => {
+                console.error("Error listening to state changes:", error);
+            });
+        }
+        
         function createDefaultState() {
             appState = {
                 clipGroups: { 'Grupo por Defecto': [ { name: 'Intro Evento', duration: 30, color: '#3b82f6' }, { name: 'Vídeo Resumen', duration: 185, color: '#10b981' } ] },
                 activeGroupName: 'Grupo por Defecto'
             };
         }
-
-        function saveStateToStorage() { localStorage.setItem('videoPlayerAppState_v2', JSON.stringify(appState)); }
         
         function getActiveClipLibrary() { return appState.clipGroups[appState.activeGroupName] || []; }
 
-        // --- RENDER FUNCTIONS ---
+        // --- FUNCIONES DE RENDERIZADO (sin cambios en su lógica interna) ---
         function renderAll() {
             if (isPvwMode) {
                 renderPvwMonitor();
@@ -197,11 +245,7 @@
                 screen.className = `monitor-screen ${player.isPlaying ? 'playing' : (player.clip && player.elapsedTime > 0 && !player.isPlaying ? 'paused' : '')}`;
                 screen.style.backgroundColor = player.clip ? player.clip.color : '#000000';
                 if (player.clip) { 
-                    screen.innerHTML = `
-                        <div class="pvw-details">
-                            ${player.isPlaying ? '<span class="pvw-play-indicator-large">PLAY</span>' : ''}
-                            <span class="pvw-clip-name-large">${player.clip.name}</span>
-                        </div>`;
+                    screen.innerHTML = `<div class="pvw-details">${player.isPlaying ? '<span class="pvw-play-indicator-large">PLAY</span>' : ''}<span class="pvw-clip-name-large">${player.clip.name}</span></div>`;
                 } else { 
                     screen.innerHTML = `<div class="text-3xl text-gray-600 font-bold">EMPTY</div>`;
                 }
@@ -221,34 +265,13 @@
                 if (player.clip) {
                     const progress = (player.elapsedTime / player.clip.duration) * 100;
                     const remaining = player.clip.duration - player.elapsedTime;
-                    miniMonitorContent = `
-                        <div class="screen-overlay text-white">
-                            <div class="flex justify-between items-start text-xs">
-                                <span class="font-bold truncate pr-1">${player.clip.name}</span>
-                            </div>
-                            <div>
-                                <div class="progress-bar mb-1"><div class="progress-bar-inner" style="width: ${progress}%"></div></div>
-                                <div class="flex justify-between text-gray-300" style="font-size: 0.65rem;">
-                                    <span>${formatTime(player.elapsedTime)}</span>
-                                    <span>-${formatTime(remaining < 0 ? 0 : remaining)}</span>
-                                </div>
-                            </div>
-                        </div>
-                    `;
+                    miniMonitorContent = `<div class="screen-overlay text-white"><div class="flex justify-between items-start text-xs"><span class="font-bold truncate pr-1">${player.clip.name}</span></div><div><div class="progress-bar mb-1"><div class="progress-bar-inner" style="width: ${progress}%"></div></div><div class="flex justify-between text-gray-300" style="font-size: 0.65rem;"><span>${formatTime(player.elapsedTime)}</span><span>-${formatTime(remaining < 0 ? 0 : remaining)}</span></div></div></div>`;
                 }
                 controlEl.innerHTML = `
                     <h3 class="font-bold text-lg text-center pointer-events-none">Disco ${player.id + 1}</h3>
-                    <div class="mini-monitor" style="background-color: ${player.clip ? player.clip.color : '#000'}">
-                        ${miniMonitorContent}
-                    </div>
-                    <div class="flex justify-center space-x-2">
-                        <button data-player-id="${player.id}" class="play-pause-btn btn-control ${playPauseColor} p-2 rounded-md w-1/2 text-sm font-bold" ${!player.clip ? 'disabled' : ''}>${playPauseText}</button>
-                        <button data-player-id="${player.id}" class="stop-btn btn-control bg-red-600 hover:bg-red-700 p-2 rounded-md w-1/2 text-sm font-bold" ${!player.clip ? 'disabled' : ''}>STOP</button>
-                    </div>
-                    <div class="flex items-center justify-center space-x-3 pt-1">
-                        <label class="text-sm font-medium text-gray-300 pointer-events-none">Loop</label>
-                        <button data-player-id="${player.id}" role="switch" aria-checked="${player.isLooping}" class="loop-switch relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${player.isLooping ? 'bg-indigo-600' : 'bg-gray-500'}"><span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out" style="transform: translateX(${player.isLooping ? '1.25rem' : '0'})"></span></button>
-                    </div>`;
+                    <div class="mini-monitor" style="background-color: ${player.clip ? player.clip.color : '#000'}">${miniMonitorContent}</div>
+                    <div class="flex justify-center space-x-2"><button data-player-id="${player.id}" class="play-pause-btn btn-control ${playPauseColor} p-2 rounded-md w-1/2 text-sm font-bold" ${!player.clip ? 'disabled' : ''}>${playPauseText}</button><button data-player-id="${player.id}" class="stop-btn btn-control bg-red-600 hover:bg-red-700 p-2 rounded-md w-1/2 text-sm font-bold" ${!player.clip ? 'disabled' : ''}>STOP</button></div>
+                    <div class="flex items-center justify-center space-x-3 pt-1"><label class="text-sm font-medium text-gray-300 pointer-events-none">Loop</label><button data-player-id="${player.id}" role="switch" aria-checked="${player.isLooping}" class="loop-switch relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${player.isLooping ? 'bg-indigo-600' : 'bg-gray-500'}"><span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out" style="transform: translateX(${player.isLooping ? '1.25rem' : '0'})"></span></button></div>`;
                 container.appendChild(controlEl);
             });
         }
@@ -272,14 +295,13 @@
         }
         
         // --- LOGIC FUNCTIONS ---
-        function updateAndBroadcast() { renderAll(); broadcastState(); }
-        function loadClip(clipName, playerId) { if (players[playerId].isPlaying) stopPlayback(playerId); const clipData = getActiveClipLibrary().find(c => c.name === clipName); players[playerId].clip = clipData ? { ...clipData } : null; players[playerId].elapsedTime = 0; updateAndBroadcast(); }
-        function tick(playerId) { const p = players[playerId]; if (!p.isPlaying || !p.clip) return; p.elapsedTime++; if (p.elapsedTime >= p.clip.duration) { p.isLooping ? (p.elapsedTime = 0) : stopPlayback(playerId); } updateAndBroadcast(); }
+        function loadClip(clipName, playerId) { if (players[playerId].isPlaying) stopPlayback(playerId); const clipData = getActiveClipLibrary().find(c => c.name === clipName); players[playerId].clip = clipData ? { ...clipData } : null; players[playerId].elapsedTime = 0; updateStateInFirestore(); }
+        function tick(playerId) { const p = players[playerId]; if (!p.isPlaying || !p.clip) return; p.elapsedTime++; if (p.elapsedTime >= p.clip.duration) { p.isLooping ? (p.elapsedTime = 0) : stopPlayback(playerId); } else { updateStateInFirestore(); } }
         function togglePlayPause(playerId) { players[playerId].clip && (players[playerId].isPlaying ? pausePlayback(playerId) : startPlayback(playerId)); }
-        function startPlayback(playerId) { const p = players[playerId]; if (p.isPlaying || !p.clip) return; if (p.elapsedTime >= p.clip.duration) p.elapsedTime = 0; p.isPlaying = true; p.intervalId = setInterval(() => tick(playerId), 1000); updateAndBroadcast(); }
-        function pausePlayback(playerId) { const p = players[playerId]; if (!p.isPlaying) return; p.isPlaying = false; clearInterval(p.intervalId); p.intervalId = null; updateAndBroadcast(); }
-        function stopPlayback(playerId) { const p = players[playerId]; if (!p.clip) return; if (p.isPlaying) pausePlayback(playerId); p.elapsedTime = 0; updateAndBroadcast(); }
-        function toggleLoop(playerId) { players[playerId].isLooping = !players[playerId].isLooping; updateAndBroadcast(); }
+        function startPlayback(playerId) { const p = players[playerId]; if (p.isPlaying || !p.clip) return; if (p.elapsedTime >= p.clip.duration) p.elapsedTime = 0; p.isPlaying = true; p.intervalId = setInterval(() => tick(playerId), 1000); updateStateInFirestore(); }
+        function pausePlayback(playerId) { const p = players[playerId]; if (!p.isPlaying) return; p.isPlaying = false; clearInterval(p.intervalId); p.intervalId = null; updateStateInFirestore(); }
+        function stopPlayback(playerId) { const p = players[playerId]; if (!p.clip) return; if (p.isPlaying) pausePlayback(playerId); p.elapsedTime = 0; updateStateInFirestore(); }
+        function toggleLoop(playerId) { players[playerId].isLooping = !players[playerId].isLooping; updateStateInFirestore(); }
         
         function formatTime(s) { const min = Math.floor(s/60); const sec = Math.floor(s%60); return `${String(min).padStart(2,'0')}:${String(sec).padStart(2,'0')}`; }
         function getRandomColor() { return `#${Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')}`; }
@@ -291,18 +313,8 @@
             document.getElementById('tab-editor').addEventListener('click', () => { document.getElementById('view-control').style.display = 'none'; document.getElementById('view-editor').style.display = 'block'; document.getElementById('tab-control').classList.remove('active'); document.getElementById('tab-editor').classList.add('active'); });
             document.getElementById('open-pvw-btn').addEventListener('click', () => { window.open(`${window.location.pathname}?view=pvw`, '_blank', 'noopener,noreferrer'); });
             
-            document.getElementById('pgm-size-increase').addEventListener('click', () => {
-                if (pgmScaleIndex < pgmScales.length - 1) {
-                    pgmScaleIndex++;
-                    renderPgmMonitor();
-                }
-            });
-            document.getElementById('pgm-size-decrease').addEventListener('click', () => {
-                 if (pgmScaleIndex > 0) {
-                    pgmScaleIndex--;
-                    renderPgmMonitor();
-                }
-            });
+            document.getElementById('pgm-size-increase').addEventListener('click', () => { if (pgmScaleIndex < pgmScales.length - 1) { pgmScaleIndex++; renderPgmMonitor(); } });
+            document.getElementById('pgm-size-decrease').addEventListener('click', () => { if (pgmScaleIndex > 0) { pgmScaleIndex--; renderPgmMonitor(); } });
 
             mainContent.addEventListener('click', (e) => {
                 const target = e.target;
@@ -312,31 +324,25 @@
                 if (target.matches('.play-pause-btn')) { togglePlayPause(parseInt(target.dataset.playerId, 10)); }
                 if (target.matches('.stop-btn')) { stopPlayback(parseInt(target.dataset.playerId, 10)); }
                 if (target.matches('.loop-switch')) { toggleLoop(parseInt(target.dataset.playerId, 10)); }
-                if (target.matches('.delete-clip-btn')) { getActiveClipLibrary().splice(target.dataset.clipIndex, 1); saveStateToStorage(); renderAll(); broadcastState(); }
+                if (target.matches('.delete-clip-btn')) { getActiveClipLibrary().splice(target.dataset.clipIndex, 1); updateStateInFirestore(); }
                 if (target.matches('#create-group-btn')) {
                     const newGroupName = document.getElementById('new-group-name').value.trim();
-                    if (newGroupName && !appState.clipGroups[newGroupName]) { appState.clipGroups[newGroupName] = []; appState.activeGroupName = newGroupName; document.getElementById('new-group-name').value = ''; saveStateToStorage(); renderAll(); broadcastState(); } else { alert('Nombre de grupo inválido o ya existe.'); }
+                    if (newGroupName && !appState.clipGroups[newGroupName]) { appState.clipGroups[newGroupName] = []; appState.activeGroupName = newGroupName; document.getElementById('new-group-name').value = ''; updateStateInFirestore(); } else { alert('Nombre de grupo inválido o ya existe.'); }
                 }
-                 if (target.closest('#delete-group-btn')) { if (confirm(`¿Seguro que quieres borrar el grupo "${appState.activeGroupName}"? Esta acción no se puede deshacer.`)) { delete appState.clipGroups[appState.activeGroupName]; appState.activeGroupName = Object.keys(appState.clipGroups)[0] || ''; saveStateToStorage(); renderAll(); broadcastState(); } }
+                 if (target.closest('#delete-group-btn')) { if (confirm(`¿Seguro que quieres borrar el grupo "${appState.activeGroupName}"? Esta acción no se puede deshacer.`)) { delete appState.clipGroups[appState.activeGroupName]; appState.activeGroupName = Object.keys(appState.clipGroups)[0] || ''; updateStateInFirestore(); } }
             });
-            mainContent.addEventListener('change', (e) => { if (e.target.matches('#group-selector')) { appState.activeGroupName = e.target.value; saveStateToStorage(); renderAll(); broadcastState(); } });
-            mainContent.addEventListener('input', (e) => { if(e.target.matches('.edit-clip-color')) { getActiveClipLibrary()[e.target.dataset.clipIndex].color = e.target.value; saveStateToStorage(); renderAll(); broadcastState(); } });
+            mainContent.addEventListener('change', (e) => { if (e.target.matches('#group-selector')) { appState.activeGroupName = e.target.value; updateStateInFirestore(); } });
+            mainContent.addEventListener('input', (e) => { if(e.target.matches('.edit-clip-color')) { getActiveClipLibrary()[e.target.dataset.clipIndex].color = e.target.value; updateStateInFirestore(); } });
             mainContent.addEventListener('submit', (e) => {
                 if(e.target.id !== 'add-clip-form') return; e.preventDefault();
                 const name = document.getElementById('clip-name').value.trim(); const duration = parseInt(document.getElementById('clip-duration').value, 10); const activeLibrary = getActiveClipLibrary();
-                if (name && duration > 0 && !activeLibrary.some(c => c.name === name)) { activeLibrary.push({ name, duration, color: getRandomColor() }); saveStateToStorage(); renderAll(); broadcastState(); e.target.reset(); } else { alert('Nombre de clip inválido, duplicado o duración incorrecta.'); }
+                if (name && duration > 0 && !activeLibrary.some(c => c.name === name)) { activeLibrary.push({ name, duration, color: getRandomColor() }); updateStateInFirestore(); e.target.reset(); } else { alert('Nombre de clip inválido, duplicado o duración incorrecta.'); }
             });
         }
         
         // --- INITIALIZATION ---
-        loadStateFromStorage();
-        renderAll();
-        if (isPvwMode) {
-             channel.postMessage('request_sync_full'); // Request initial full state from a control view
-        } else {
-            broadcastState(); // Announce initial state to any listening PVWs
-        }
-    });
+        initializeFirebase();
+
     </script>
 </body>
 </html>
