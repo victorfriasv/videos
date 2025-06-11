@@ -51,8 +51,13 @@
 </head>
 <body class="p-0">
 
+    <div id="loading-overlay" class="absolute inset-0 bg-gray-900 flex flex-col items-center justify-center z-50 transition-opacity duration-500">
+        <h2 class="text-2xl font-semibold text-white">Conectando con el servidor...</h2>
+        <p id="loading-error" class="text-red-400 mt-2"></p>
+    </div>
+
     <!-- Vista de Control Principal -->
-    <div class="control-view p-4 md:p-6">
+    <div class="control-view p-4 md:p-6 opacity-0 transition-opacity duration-500">
         <header class="text-center mb-4 flex-shrink-0">
             <h1 class="text-3xl md:text-4xl font-bold text-white">Panel de Control de Vídeo Unificado</h1>
         </header>
@@ -115,7 +120,7 @@
         // --- IMPORTS DE FIREBASE ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot, updateDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, onSnapshot, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- SETUP ---
         const urlParams = new URLSearchParams(window.location.search);
@@ -131,20 +136,24 @@
 
         // --- CONFIGURACIÓN DE FIREBASE ---
         let db, auth, stateDocRef;
-
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
         
         async function initializeFirebase() {
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const errorElement = document.getElementById('loading-error');
+            const controlView = document.querySelector('.control-view');
+
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        
             if (!firebaseConfig) {
-                console.error("Firebase config is missing.");
+                errorElement.textContent = "Error: Configuración de Firebase no encontrada.";
                 return;
             }
             try {
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
-                setLogLevel('debug');
+                setLogLevel('error'); // 'debug' para más detalles
 
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await signInWithCustomToken(auth, __initial_auth_token);
@@ -161,13 +170,12 @@
 
             } catch (error) {
                 console.error("Firebase initialization failed:", error);
+                errorElement.textContent = "Error al conectar con el servidor.";
             }
         }
         
-        // --- GESTIÓN DE ESTADO CON FIRESTORE ---
         async function updateStateInFirestore() {
-            if (!stateDocRef) return;
-            // Detener los intervalos antes de guardar para no almacenar IDs de intervalo en Firestore
+            if (!stateDocRef || isPvwMode) return; // PVW no escribe
             const stateToSave = {
                 appState,
                 players: players.map(p => ({ ...p, intervalId: null })) 
@@ -184,22 +192,41 @@
             onSnapshot(stateDocRef, (docSnap) => {
                 if (docSnap.exists()) {
                     const data = docSnap.data();
-                    appState = data.appState;
-                    // Restaurar estado de los reproductores, pero no los intervalos
-                    const wasPlaying = players.map(p => p.isPlaying);
-                    players = data.players.map((p, i) => ({
-                         ...p,
-                         isPlaying: wasPlaying[i] && p.clip ? true : false // Keep playing status if it was playing locally
-                    }));
-                } else {
-                    // Si el documento no existe, lo creamos con el estado por defecto
+                    if(data.appState) appState = data.appState;
+                    
+                    const remotePlayers = data.players || [];
+                    remotePlayers.forEach((remotePlayer, i) => {
+                        const localPlayer = players[i];
+                        if (!localPlayer) return;
+
+                        const wasPlaying = localPlayer.isPlaying;
+                        Object.assign(localPlayer, remotePlayer);
+                        
+                        if (localPlayer.isPlaying && !wasPlaying) {
+                            clearInterval(localPlayer.intervalId); // Clear any old one
+                            localPlayer.intervalId = setInterval(() => tick(localPlayer.id), 1000);
+                        } else if (!localPlayer.isPlaying && wasPlaying) {
+                            clearInterval(localPlayer.intervalId);
+                            localPlayer.intervalId = null;
+                        }
+                    });
+                } else if (!isPvwMode) {
                     console.log("No state document found, creating one.");
                     createDefaultState();
                     updateStateInFirestore();
                 }
+                
+                const loadingOverlay = document.getElementById('loading-overlay');
+                if (loadingOverlay) loadingOverlay.style.opacity = '0';
+                
+                const controlView = document.querySelector('.control-view');
+                if (controlView) controlView.style.opacity = '1';
+
                 renderAll();
             }, (error) => {
                 console.error("Error listening to state changes:", error);
+                const errorElement = document.getElementById('loading-error');
+                if(errorElement) errorElement.textContent = "Error de sincronización con la base de datos.";
             });
         }
         
@@ -210,9 +237,8 @@
             };
         }
         
-        function getActiveClipLibrary() { return appState.clipGroups[appState.activeGroupName] || []; }
+        function getActiveClipLibrary() { return appState.clipGroups ? (appState.clipGroups[appState.activeGroupName] || []) : []; }
 
-        // --- FUNCIONES DE RENDERIZADO (sin cambios en su lógica interna) ---
         function renderAll() {
             if (isPvwMode) {
                 renderPvwMonitor();
@@ -282,7 +308,7 @@
             }
         }
         function renderGroupManager() {
-            const container = document.getElementById('group-manager'); if(!container) return; const groupNames = Object.keys(appState.clipGroups);
+            const container = document.getElementById('group-manager'); if(!container) return; const groupNames = Object.keys(appState.clipGroups || {});
             container.innerHTML = `<div class="space-y-2"><label for="group-selector" class="block text-sm font-medium text-gray-300">Seleccionar Grupo</label><div class="flex gap-2"><select id="group-selector" class="block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500">${groupNames.map(name => `<option value="${name}" ${name === appState.activeGroupName ? 'selected' : ''}>${name}</option>`).join('')}</select><button id="delete-group-btn" title="Borrar Grupo Seleccionado" class="flex-shrink-0 bg-red-600 hover:bg-red-700 text-white font-bold p-2 rounded-md" ${groupNames.length <= 1 ? 'disabled' : ''}><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" /></svg></button></div></div><div class="space-y-2 pt-4"><label for="new-group-name" class="block text-sm font-medium text-gray-300">Crear Nuevo Grupo</label><div class="flex gap-2"><input type="text" id="new-group-name" placeholder="Nombre del nuevo grupo" class="block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500"><button id="create-group-btn" class="flex-shrink-0 bg-green-600 hover:bg-green-700 text-white font-bold p-2 rounded-md">Crear</button></div></div>`;
         }
         function renderEditorClipList() {
@@ -296,10 +322,10 @@
         
         // --- LOGIC FUNCTIONS ---
         function loadClip(clipName, playerId) { if (players[playerId].isPlaying) stopPlayback(playerId); const clipData = getActiveClipLibrary().find(c => c.name === clipName); players[playerId].clip = clipData ? { ...clipData } : null; players[playerId].elapsedTime = 0; updateStateInFirestore(); }
-        function tick(playerId) { const p = players[playerId]; if (!p.isPlaying || !p.clip) return; p.elapsedTime++; if (p.elapsedTime >= p.clip.duration) { p.isLooping ? (p.elapsedTime = 0) : stopPlayback(playerId); } else { updateStateInFirestore(); } }
+        function tick(playerId) { const p = players[playerId]; if (!p.isPlaying || !p.clip) return; p.elapsedTime++; if (p.elapsedTime >= p.clip.duration) { p.isLooping ? (p.elapsedTime = 0, updateStateInFirestore()) : stopPlayback(playerId); } else { renderAll(); } }
         function togglePlayPause(playerId) { players[playerId].clip && (players[playerId].isPlaying ? pausePlayback(playerId) : startPlayback(playerId)); }
-        function startPlayback(playerId) { const p = players[playerId]; if (p.isPlaying || !p.clip) return; if (p.elapsedTime >= p.clip.duration) p.elapsedTime = 0; p.isPlaying = true; p.intervalId = setInterval(() => tick(playerId), 1000); updateStateInFirestore(); }
-        function pausePlayback(playerId) { const p = players[playerId]; if (!p.isPlaying) return; p.isPlaying = false; clearInterval(p.intervalId); p.intervalId = null; updateStateInFirestore(); }
+        function startPlayback(playerId) { const p = players[playerId]; if (p.isPlaying || !p.clip) return; if (p.elapsedTime >= p.clip.duration) p.elapsedTime = 0; p.isPlaying = true; updateStateInFirestore(); }
+        function pausePlayback(playerId) { const p = players[playerId]; if (!p.isPlaying) return; p.isPlaying = false; updateStateInFirestore(); }
         function stopPlayback(playerId) { const p = players[playerId]; if (!p.clip) return; if (p.isPlaying) pausePlayback(playerId); p.elapsedTime = 0; updateStateInFirestore(); }
         function toggleLoop(playerId) { players[playerId].isLooping = !players[playerId].isLooping; updateStateInFirestore(); }
         
