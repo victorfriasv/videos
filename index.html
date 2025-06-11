@@ -115,15 +115,15 @@
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // --- TU CONFIGURACIÓN DE FIREBASE ---
         const USER_FIREBASE_CONFIG = {
-          apiKey: "AIza...",
-          authDomain: "tu-proyecto.firebaseapp.com",
-          projectId: "tu-proyecto",
-          storageBucket: "tu-proyecto.appspot.com",
-          messagingSenderId: "12345...",
-          appId: "1:12345...:web:..."
+          apiKey: "AIzaSyBVxZ_iTU7xMk5HSFfS5b96HOYll7ZVzRc",
+          authDomain: "videos-38fcd.firebaseapp.com",
+          projectId: "videos-38fcd",
+          storageBucket: "videos-38fcd.appspot.com",
+          messagingSenderId: "376645646912",
+          appId: "1:376645646912:web:eaac3f44bb0392cd4bfda5"
         };
-
 
         const urlParams = new URLSearchParams(window.location.search);
         const isPvwMode = urlParams.get('view') === 'pvw';
@@ -146,7 +146,7 @@
             const firebaseConfig = configFromPlatform || USER_FIREBASE_CONFIG;
         
             if (!firebaseConfig) {
-                errorElement.textContent = "Error: Configuración de Firebase no encontrada. Pega tu configuración en el archivo HTML.";
+                errorElement.textContent = "Error: Configuración de Firebase no encontrada.";
                 return;
             }
 
