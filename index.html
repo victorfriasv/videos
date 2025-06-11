@@ -30,7 +30,6 @@
         .progress-bar { width: 100%; background-color: rgba(75, 85, 99, 0.5); height: 6px; border-radius: 3px; }
         .progress-bar-inner { height: 100%; background-color: #22C55E; border-radius: 3px; transition: width 0.1s linear; }
         .btn-control:disabled { opacity: 0.5; cursor: not-allowed; }
-        .loop-indicator { position: absolute; top: 8px; right: 8px; font-size: 0.75rem; color: #F59E0B; background-color: rgba(0,0,0,0.5); padding: 2px 6px; border-radius: 4px; font-weight: bold; }
         
         .player-control-panel { border: 2px solid transparent; transition: border-color 0.2s; cursor: pointer; }
         .player-control-panel.active { border-color: #3B82F6; box-shadow: 0 0 15px rgba(59, 130, 246, 0.5); }
@@ -63,7 +62,7 @@
         </header>
         
         <div class="mb-4 flex justify-center border-b border-gray-700 flex-shrink-0">
-            <button id="tab-control" class="tab-btn active py-2 px-6 font-semibold text-gray-300">Control y PGM</button>
+            <button id="tab-control" class="tab-btn active py-2 px-6 font-semibold text-gray-300">Control</button>
             <button id="tab-editor" class="tab-btn py-2 px-6 font-semibold text-gray-300">Editor de Clips</button>
             <button id="open-pvw-btn" class="tab-btn py-2 px-6 font-semibold text-gray-300 bg-purple-600 hover:bg-purple-700">Abrir Previo</button>
         </div>
@@ -75,16 +74,6 @@
                         <div class="bg-gray-900/50 p-4 rounded-lg">
                             <h2 class="text-2xl font-semibold mb-4">Controles de Discos</h2>
                             <div id="player-controls-container" class="grid grid-cols-1 md:grid-cols-2 gap-5"></div>
-                        </div>
-                        <div class="bg-gray-900/50 p-4 rounded-lg">
-                            <div class="flex justify-center items-center gap-4 mb-4">
-                                <h2 class="text-2xl font-semibold text-center">Salida Program (PGM)</h2>
-                                <div class="flex gap-2">
-                                     <button id="pgm-size-decrease" title="Reducir" class="bg-gray-700 hover:bg-gray-600 rounded-full w-7 h-7 flex items-center justify-center text-xl font-bold">-</button>
-                                     <button id="pgm-size-increase" title="Aumentar" class="bg-gray-700 hover:bg-gray-600 rounded-full w-7 h-7 flex items-center justify-center text-xl font-bold">+</button>
-                                </div>
-                            </div>
-                            <div id="program-monitor" class="grid grid-cols-2 gap-2 transition-transform duration-300 origin-top"></div>
                         </div>
                     </div>
                     <div id="right-column" class="bg-gray-900/50 p-4 rounded-lg flex flex-col min-h-0">
@@ -147,8 +136,6 @@
         let appState = { clipGroups: {}, activeGroupName: '' };
         let players = Array(4).fill(null).map((_, i) => ({ id: i, clip: null, isPlaying: false, isLooping: false, elapsedTime: 0, intervalId: null }));
         let targetPlayerId = 0;
-        let pgmScaleIndex = 2;
-        const pgmScales = [0.75, 0.85, 1.0, 1.1, 1.25];
 
         let db, auth, stateDocRef, unsubscribe;
         let connectionTimeout;
@@ -222,14 +209,12 @@
                         const wasPlaying = localPlayer.isPlaying;
                         Object.assign(localPlayer, remotePlayer);
                         
-                        if (!isPvwMode) {
-                            if (localPlayer.isPlaying && !wasPlaying) {
-                                clearInterval(localPlayer.intervalId);
-                                localPlayer.intervalId = setInterval(() => tick(localPlayer.id), 1000);
-                            } else if (!localPlayer.isPlaying && wasPlaying) {
-                                clearInterval(localPlayer.intervalId);
-                                localPlayer.intervalId = null;
-                            }
+                        if (localPlayer.isPlaying && !wasPlaying) {
+                            clearInterval(localPlayer.intervalId);
+                            localPlayer.intervalId = setInterval(() => tick(localPlayer.id), 1000);
+                        } else if (!localPlayer.isPlaying && wasPlaying) {
+                            clearInterval(localPlayer.intervalId);
+                            localPlayer.intervalId = null;
                         }
                     });
                 } else if (!isPvwMode) {
@@ -262,24 +247,9 @@
                 renderPlayerControls();
                 renderControlClipLibrary();
                 renderEditorUI();
-                renderPgmMonitor();
             }
         }
 
-        function renderPgmMonitor() {
-            const container = document.getElementById('program-monitor'); if (!container) return;
-            container.style.transform = `scale(${pgmScales[pgmScaleIndex]})`;
-            container.innerHTML = '';
-            players.forEach(player => {
-                const screen = document.createElement('div');
-                screen.className = `monitor-screen ${player.isPlaying ? 'playing' : (player.clip && player.elapsedTime > 0 ? 'paused' : '')}`;
-                screen.style.backgroundColor = player.clip ? player.clip.color : '#000000';
-                const progress = player.clip ? (player.elapsedTime / player.clip.duration) * 100 : 0;
-                const remaining = player.clip ? player.clip.duration - player.elapsedTime : 0;
-                screen.innerHTML = `<div class="screen-overlay"><div class="flex justify-between items-start"><span class="font-bold text-sm md:text-base">${player.clip ? player.clip.name : 'NO CLIP'}</span><span class="text-xs md:text-sm text-gray-200">${player.clip ? formatTime(player.clip.duration) : '00:00'}</span></div>${player.clip ? `<div><div class="flex justify-between text-xs md:text-sm text-gray-200 mb-1"><span>${formatTime(player.elapsedTime)}</span><span>-${formatTime(remaining < 0 ? 0 : remaining)}</span></div><div class="progress-bar"><div class="progress-bar-inner" style="width: ${progress}%"></div></div></div>` : '<div class="text-3xl text-gray-600 font-bold">EMPTY</div>'}</div>${player.isLooping && player.clip ? '<div class="loop-indicator">LOOP</div>' : ''}`;
-                container.appendChild(screen);
-            });
-        }
         function renderPvwMonitor() {
             const container = document.getElementById('preview-monitor'); if (!container) return; container.innerHTML = '';
             players.forEach(player => {
@@ -363,9 +333,6 @@
             document.getElementById('tab-editor').addEventListener('click', () => { document.getElementById('view-control').style.display = 'none'; document.getElementById('view-editor').style.display = 'block'; document.getElementById('tab-control').classList.remove('active'); document.getElementById('tab-editor').classList.add('active'); });
             document.getElementById('open-pvw-btn').addEventListener('click', () => { window.open(`${window.location.pathname}?view=pvw`, '_blank', 'noopener,noreferrer'); });
             
-            document.getElementById('pgm-size-increase').addEventListener('click', () => { if (pgmScaleIndex < pgmScales.length - 1) { pgmScaleIndex++; renderPgmMonitor(); } });
-            document.getElementById('pgm-size-decrease').addEventListener('click', () => { if (pgmScaleIndex > 0) { pgmScaleIndex--; renderPgmMonitor(); } });
-
             document.getElementById('open-import-modal-btn').addEventListener('click', () => importModal.style.display = 'flex');
             document.getElementById('close-import-modal-btn').addEventListener('click', () => importModal.style.display = 'none');
             document.getElementById('import-clips-btn').addEventListener('click', () => {
@@ -422,4 +389,4 @@
         initializeFirebase();
     </script>
 </body>
-</ht
+</html>
