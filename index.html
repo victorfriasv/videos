@@ -13,6 +13,7 @@
             font-family: 'Inter', sans-serif;
             background-color: #111827;
             color: #F9FAFB;
+            overflow: hidden; /* Evita el scroll global */
         }
         .tab-btn { transition: all 0.2s; }
         .tab-btn.active { background-color: #3B82F6; color: white; }
@@ -37,6 +38,12 @@
         input[type="color"] { min-width: 36px; height: 36px; padding: 2px; border: none; background: none; cursor: pointer; }
         .clip-name-pvw { position: absolute; bottom: 8px; left: 8px; background-color: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 4px; font-size: 0.875rem; font-weight: 500; display: flex; align-items: center; gap: 6px; }
         .pvw-play-indicator { background-color: #22C55E; color: white; font-size: 0.7rem; font-weight: bold; padding: 1px 5px; border-radius: 3px; }
+        select { background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e"); background-position: right 0.5rem center; background-repeat: no-repeat; background-size: 1.5em 1.5em; -webkit-appearance: none; -moz-appearance: none; appearance: none; }
+        
+        /* Estilos para redimensionar */
+        .resizer { background: #374151; user-select: none; }
+        .resizer-v { cursor: col-resize; width: 6px; }
+        .resizer-h { cursor: row-resize; height: 6px; }
     </style>
 </head>
 <body class="p-0">
@@ -50,26 +57,26 @@
         <div class="mb-4 flex justify-center border-b border-gray-700 flex-shrink-0">
             <button id="tab-control" class="tab-btn active py-2 px-6 font-semibold text-gray-300">Control y PGM</button>
             <button id="tab-editor" class="tab-btn py-2 px-6 font-semibold text-gray-300">Editor de Clips</button>
+            <button id="open-pvw-btn" class="tab-btn py-2 px-6 font-semibold text-gray-300 bg-purple-600 hover:bg-purple-700">Abrir Previo</button>
         </div>
 
         <main id="main-content" class="flex-grow min-h-0">
             <!-- Pestaña de Control y PGM -->
             <div id="view-control" class="h-full" style="display: block;">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
-                    <!-- Columna Izquierda: PGM y Controles -->
-                    <div class="flex flex-col gap-6">
-                        <div class="bg-gray-900/50 p-4 rounded-lg">
+                <div id="main-layout" class="grid gap-6 h-full" style="grid-template-columns: 2fr 6px 1fr;">
+                    <div id="left-column" class="flex flex-col gap-6 min-h-0">
+                        <div id="pgm-container" class="bg-gray-900/50 p-4 rounded-lg" style="flex-basis: 50%;">
                             <h2 class="text-2xl font-semibold mb-4 text-center">Salida Program (PGM)</h2>
                             <div id="program-monitor" class="grid grid-cols-2 gap-2"></div>
                         </div>
-                         <div class="bg-gray-900/50 p-4 rounded-lg">
-                            <h2 class="text-2xl font-semibold mb-4">Controles de Discos</h2>
-                            <div id="player-controls-container" class="grid grid-cols-1 md:grid-cols-2 gap-5 h-full"></div>
-                         </div>
+                        <div id="resizer-h" class="resizer resizer-h rounded-full"></div>
+                        <div id="controls-container" class="bg-gray-900/50 p-4 rounded-lg flex-1 min-h-0 flex flex-col">
+                            <h2 class="text-2xl font-semibold mb-4 flex-shrink-0">Controles de Discos</h2>
+                            <div id="player-controls-container" class="grid grid-cols-1 md:grid-cols-2 gap-5 flex-grow"></div>
+                        </div>
                     </div>
-
-                    <!-- Columna Derecha: Librería -->
-                    <div class="bg-gray-900/50 p-4 rounded-lg flex flex-col min-h-0">
+                    <div id="resizer-v" class="resizer resizer-v rounded-full"></div>
+                    <div id="right-column" class="bg-gray-900/50 p-4 rounded-lg flex flex-col min-h-0">
                          <h2 class="text-2xl font-semibold mb-4 flex-shrink-0">Librería (Cargar en Disco <span id="target-disk-label">1</span>)</h2>
                          <div id="control-clip-library" class="flex-grow overflow-y-auto space-y-3 pr-2"></div>
                     </div>
@@ -78,13 +85,13 @@
 
             <!-- Pestaña Editor de Clips -->
             <div id="view-editor" class="h-full" style="display: none;">
-                <div class="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8 h-full">
-                    <div class="bg-gray-800 p-6 rounded-lg">
-                        <h2 class="text-2xl font-semibold mb-4">Añadir Nuevo Clip</h2>
-                        <form id="add-clip-form" class="space-y-4"></form>
+                <div class="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 h-full">
+                    <div class="md:col-span-1 bg-gray-800 p-6 rounded-lg flex flex-col gap-8">
+                        <div><h2 class="text-2xl font-semibold mb-4">Gestión de Grupos</h2><div id="group-manager" class="space-y-4"></div></div>
+                        <div><h2 class="text-2xl font-semibold mb-4">Añadir Nuevo Clip</h2><form id="add-clip-form" class="space-y-4"></form></div>
                     </div>
-                    <div class="bg-gray-800 p-6 rounded-lg flex flex-col">
-                        <h2 class="text-2xl font-semibold mb-4">Librería Actual</h2>
+                    <div class="md:col-span-2 bg-gray-800 p-6 rounded-lg flex flex-col">
+                        <h2 class="text-2xl font-semibold mb-4">Clips en "<span id="current-group-name-label"></span>"</h2>
                         <div id="editor-clip-list" class="space-y-3 flex-grow overflow-y-auto pr-2"></div>
                     </div>
                 </div>
@@ -93,69 +100,73 @@
     </div>
     
     <!-- Vista de PVW (Pantalla completa) -->
-    <div class="pvw-view h-screen w-screen p-2">
-         <div id="preview-monitor" class="grid grid-cols-2 gap-2 w-full h-full"></div>
-    </div>
-
+    <div class="pvw-view h-screen w-screen p-2"><div id="preview-monitor" class="grid grid-cols-2 gap-2 w-full h-full"></div></div>
 
     <script>
     document.addEventListener('DOMContentLoaded', () => {
+        // --- SETUP ---
         const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('view') === 'pvw') {
-            document.body.classList.add('pvw-mode');
-        }
+        const isPvwMode = urlParams.get('view') === 'pvw';
+        if (isPvwMode) { document.body.classList.add('pvw-mode'); }
 
         const channel = new BroadcastChannel('video_player_sync_unified');
-        let clipLibrary = [];
+        
+        let appState = { clipGroups: {}, activeGroupName: '' };
         let players = Array(4).fill(null).map((_, i) => ({ id: i, clip: null, isPlaying: false, isLooping: false, elapsedTime: 0, intervalId: null }));
         let targetPlayerId = 0;
 
-        function broadcastState() { channel.postMessage(JSON.stringify({ players, clipLibrary })); }
-        channel.onmessage = (event) => {
-            if (document.body.classList.contains('pvw-mode') || event.data === 'request_sync') {
-                 try {
-                    const state = JSON.parse(event.data);
-                    if (state.players) {
-                        players = state.players;
-                        clipLibrary = state.clipLibrary;
-                        renderAll();
-                    }
-                } catch (e) {
-                    if (e.data === 'request_sync') broadcastState();
-                }
-            }
-        };
-
-        function loadClipsFromStorage() {
-            const storedClips = localStorage.getItem('videoClipLibraryUnified');
-            if (storedClips) {
-                clipLibrary = JSON.parse(storedClips);
-                clipLibrary.forEach(clip => { if (!clip.color) clip.color = getRandomColor(); });
-            } else {
-                clipLibrary = [{ name: 'Intro Evento', duration: 30, color: '#3b82f6' }, { name: 'Vídeo Resumen', duration: 185, color: '#10b981' }, { name: 'Cierre', duration: 60, color: '#ef4444' }];
-            }
-            saveClipsToStorage();
+        // --- STATE & SYNC ---
+        function broadcastState() {
+            channel.postMessage(JSON.stringify({ players, allState: appState }));
         }
-        function saveClipsToStorage() { localStorage.setItem('videoClipLibraryUnified', JSON.stringify(clipLibrary)); }
         
+        channel.onmessage = (event) => {
+            try {
+                const receivedData = JSON.parse(event.data);
+                if (receivedData.allState) {
+                    appState = receivedData.allState;
+                    players = receivedData.players;
+                    renderAll();
+                }
+            } catch (e) { /* Ignore */ }
+        };
+        
+        function loadStateFromStorage() {
+            const storedState = localStorage.getItem('videoPlayerAppState_v2');
+            if (storedState) {
+                appState = JSON.parse(storedState);
+                if (!appState.clipGroups || !appState.activeGroupName || Object.keys(appState.clipGroups).length === 0) {
+                    createDefaultState();
+                }
+            } else { createDefaultState(); }
+            saveStateToStorage();
+        }
+
+        function createDefaultState() {
+            appState = {
+                clipGroups: { 'Grupo por Defecto': [ { name: 'Intro Evento', duration: 30, color: '#3b82f6' }, { name: 'Vídeo Resumen', duration: 185, color: '#10b981' } ] },
+                activeGroupName: 'Grupo por Defecto'
+            };
+        }
+
+        function saveStateToStorage() { localStorage.setItem('videoPlayerAppState_v2', JSON.stringify(appState)); }
+        
+        function getActiveClipLibrary() { return appState.clipGroups[appState.activeGroupName] || []; }
+
+        // --- RENDER FUNCTIONS ---
         function renderAll() {
-            if (document.body.classList.contains('pvw-mode')) {
+            if (isPvwMode) {
                 renderPvwMonitor();
             } else {
                 renderPlayerControls();
                 renderControlClipLibrary();
-                renderEditorClipList();
+                renderEditorUI();
                 renderPgmMonitor();
-                if (!document.getElementById('clip-name')) {
-                    document.getElementById('add-clip-form').innerHTML = `<div><label for="clip-name" class="block text-sm font-medium text-gray-300">Nombre del Clip</label><input type="text" id="clip-name" required class="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500"></div><div><label for="clip-duration" class="block text-sm font-medium text-gray-300">Duración (en segundos)</label><input type="number" id="clip-duration" min="1" required class="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500"></div><button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Añadir Clip</button>`;
-                }
             }
         }
 
         function renderPgmMonitor() {
-            const container = document.getElementById('program-monitor');
-            if (!container) return;
-            container.innerHTML = '';
+            const container = document.getElementById('program-monitor'); if (!container) return; container.innerHTML = '';
             players.forEach(player => {
                 const screen = document.createElement('div');
                 screen.className = `monitor-screen ${player.isPlaying ? 'playing' : (player.clip && player.elapsedTime > 0 ? 'paused' : '')}`;
@@ -166,135 +177,108 @@
                 container.appendChild(screen);
             });
         }
-        
         function renderPvwMonitor() {
-            const container = document.getElementById('preview-monitor');
-            if (!container) return;
-            container.innerHTML = '';
+            const container = document.getElementById('preview-monitor'); if (!container) return; container.innerHTML = '';
             players.forEach(player => {
                 const screen = document.createElement('div');
                 screen.className = `monitor-screen ${player.isPlaying ? 'playing' : (player.clip && player.elapsedTime > 0 && !player.isPlaying ? 'paused' : '')}`;
                 screen.style.backgroundColor = player.clip ? player.clip.color : '#000000';
-                
-                if (player.clip) {
-                    screen.innerHTML = `
-                        <div class="clip-name-pvw">
-                            ${player.isPlaying ? '<span class="pvw-play-indicator">PLAY</span>' : ''}
-                            <span>${player.clip.name}</span>
-                        </div>`;
-                } else {
-                    screen.innerHTML = `<div class="text-3xl text-gray-600 font-bold">EMPTY</div>`;
-                }
+                if (player.clip) { screen.innerHTML = `<div class="clip-name-pvw">${player.isPlaying ? '<span class="pvw-play-indicator">PLAY</span>' : ''}<span>${player.clip.name}</span></div>`; } else { screen.innerHTML = `<div class="text-3xl text-gray-600 font-bold">EMPTY</div>`; }
                 container.appendChild(screen);
             });
         }
-        
         function renderPlayerControls() {
-            const container = document.getElementById('player-controls-container');
-            if (!container) return;
-            container.innerHTML = '';
+            const container = document.getElementById('player-controls-container'); if (!container) return; container.innerHTML = '';
             players.forEach(player => {
                 const controlEl = document.createElement('div');
                 controlEl.className = `player-control-panel bg-gray-800 p-4 rounded-lg space-y-3 ${player.id === targetPlayerId ? 'active' : ''}`;
                 controlEl.dataset.playerId = player.id;
                 const playPauseText = player.isPlaying ? 'PAUSE' : 'PLAY';
                 const playPauseColor = player.isPlaying ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-600 hover:bg-green-700';
-                controlEl.innerHTML = `
-                    <h3 class="font-bold text-lg text-center pointer-events-none">Disco ${player.id + 1}</h3>
-                    <div class="bg-gray-900 text-center p-2 rounded-md h-10 flex items-center justify-center pointer-events-none">
-                        <span class="text-sm font-medium text-gray-300 truncate">${player.clip ? player.clip.name : 'VACÍO'}</span>
-                    </div>
-                    <div class="flex justify-center space-x-2">
-                        <button data-player-id="${player.id}" class="play-pause-btn btn-control ${playPauseColor} p-2 rounded-md w-1/3 text-sm font-bold" ${!player.clip ? 'disabled' : ''}>${playPauseText}</button>
-                        <button data-player-id="${player.id}" class="stop-btn btn-control bg-red-600 hover:bg-red-700 p-2 rounded-md w-1/3 text-sm font-bold" ${!player.clip ? 'disabled' : ''}>STOP</button>
-                    </div>
-                    <div class="flex items-center justify-center space-x-3 pt-1">
-                        <label class="text-sm font-medium text-gray-300 pointer-events-none">Loop</label>
-                        <button data-player-id="${player.id}" role="switch" aria-checked="${player.isLooping}" class="loop-switch relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${player.isLooping ? 'bg-indigo-600' : 'bg-gray-500'}">
-                            <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out" style="transform: translateX(${player.isLooping ? '1.25rem' : '0'})"></span>
-                        </button>
-                    </div>`;
+                controlEl.innerHTML = `<h3 class="font-bold text-lg text-center pointer-events-none">Disco ${player.id + 1}</h3><div class="bg-gray-900 text-center p-2 rounded-md h-10 flex items-center justify-center pointer-events-none"><span class="text-sm font-medium text-gray-300 truncate">${player.clip ? player.clip.name : 'VACÍO'}</span></div><div class="flex justify-center space-x-2"><button data-player-id="${player.id}" class="play-pause-btn btn-control ${playPauseColor} p-2 rounded-md w-1/3 text-sm font-bold" ${!player.clip ? 'disabled' : ''}>${playPauseText}</button><button data-player-id="${player.id}" class="stop-btn btn-control bg-red-600 hover:bg-red-700 p-2 rounded-md w-1/3 text-sm font-bold" ${!player.clip ? 'disabled' : ''}>STOP</button></div><div class="flex items-center justify-center space-x-3 pt-1"><label class="text-sm font-medium text-gray-300 pointer-events-none">Loop</label><button data-player-id="${player.id}" role="switch" aria-checked="${player.isLooping}" class="loop-switch relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${player.isLooping ? 'bg-indigo-600' : 'bg-gray-500'}"><span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out" style="transform: translateX(${player.isLooping ? '1.25rem' : '0'})"></span></button></div>`;
                 container.appendChild(controlEl);
             });
         }
-        
-        function renderControlClipLibrary() {
-            const container = document.getElementById('control-clip-library');
-            if (!container) return;
-            container.innerHTML = '';
-             if (clipLibrary.length === 0) { container.innerHTML = `<p class="text-gray-400 text-center">Añade clips en el Editor.</p>`; return; }
-            clipLibrary.forEach(clip => {
-                const el = document.createElement('div');
-                el.className = 'load-clip-action bg-gray-700 p-3 rounded-md flex items-center cursor-pointer hover:bg-gray-600 transition-colors';
-                el.dataset.clipName = clip.name;
-                el.innerHTML = `<div class="flex items-center space-x-3 pointer-events-none"><div class="w-4 h-8 rounded" style="background-color:${clip.color};"></div><div><p class="font-medium">${clip.name}</p><p class="text-sm text-gray-400">Duración: ${formatTime(clip.duration)}</p></div></div>`;
-                container.appendChild(el);
-            });
+        function renderEditorUI() {
+            renderGroupManager(); renderEditorClipList();
+            if (!document.getElementById('clip-name')) {
+                document.getElementById('add-clip-form').innerHTML = `<div><label for="clip-name" class="block text-sm font-medium text-gray-300">Nombre del Clip</label><input type="text" id="clip-name" required class="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500"></div><div><label for="clip-duration" class="block text-sm font-medium text-gray-300">Duración (en segundos)</label><input type="number" id="clip-duration" min="1" required class="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500"></div><button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Añadir a Grupo</button>`;
+            }
         }
-        
+        function renderGroupManager() {
+            const container = document.getElementById('group-manager'); if(!container) return; const groupNames = Object.keys(appState.clipGroups);
+            container.innerHTML = `<div class="space-y-2"><label for="group-selector" class="block text-sm font-medium text-gray-300">Seleccionar Grupo</label><div class="flex gap-2"><select id="group-selector" class="block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500">${groupNames.map(name => `<option value="${name}" ${name === appState.activeGroupName ? 'selected' : ''}>${name}</option>`).join('')}</select><button id="delete-group-btn" title="Borrar Grupo Seleccionado" class="flex-shrink-0 bg-red-600 hover:bg-red-700 text-white font-bold p-2 rounded-md" ${groupNames.length <= 1 ? 'disabled' : ''}><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" /></svg></button></div></div><div class="space-y-2 pt-4"><label for="new-group-name" class="block text-sm font-medium text-gray-300">Crear Nuevo Grupo</label><div class="flex gap-2"><input type="text" id="new-group-name" placeholder="Nombre del nuevo grupo" class="block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm text-white focus:ring-blue-500 focus:border-blue-500"><button id="create-group-btn" class="flex-shrink-0 bg-green-600 hover:bg-green-700 text-white font-bold p-2 rounded-md">Crear</button></div></div>`;
+        }
         function renderEditorClipList() {
-            const container = document.getElementById('editor-clip-list');
-            if (!container) return;
-            container.innerHTML = '';
-            if (clipLibrary.length === 0) { container.innerHTML = `<p class="text-gray-400 text-center">No hay clips.</p>`; return; }
-            clipLibrary.forEach((clip, index) => {
-                const el = document.createElement('div');
-                el.className = 'bg-gray-700 p-3 rounded-md flex justify-between items-center';
-                el.innerHTML = `<div class="flex items-center space-x-3"><input type="color" value="${clip.color}" data-clip-index="${index}" class="edit-clip-color"><div><p class="font-medium">${clip.name}</p><p class="text-sm text-gray-400">Duración: ${formatTime(clip.duration)}</p></div></div><button data-clip-index="${index}" class="delete-clip-btn bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-md text-sm">Borrar</button>`;
-                container.appendChild(el);
-            });
+            const container = document.getElementById('editor-clip-list'); const label = document.getElementById('current-group-name-label'); if (!container || !label) return; label.textContent = appState.activeGroupName; const clipLibrary = getActiveClipLibrary(); container.innerHTML = ''; if (clipLibrary.length === 0) { container.innerHTML = `<p class="text-gray-400 text-center">Este grupo no tiene clips.</p>`; return; }
+            clipLibrary.forEach((clip, index) => { const el = document.createElement('div'); el.className = 'bg-gray-700 p-3 rounded-md flex justify-between items-center'; el.innerHTML = `<div class="flex items-center space-x-3"><input type="color" value="${clip.color}" data-clip-index="${index}" class="edit-clip-color"><div><p class="font-medium">${clip.name}</p><p class="text-sm text-gray-400">Duración: ${formatTime(clip.duration)}</p></div></div><button data-clip-index="${index}" class="delete-clip-btn bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-md text-sm">Borrar</button>`; container.appendChild(el); });
         }
-
-        function loadClip(clipName, playerId) { if (players[playerId].isPlaying) stopPlayback(playerId); players[playerId].clip = { ...clipLibrary.find(c => c.name === clipName) }; players[playerId].elapsedTime = 0; updateAndBroadcast(); }
+        function renderControlClipLibrary() {
+            const container = document.getElementById('control-clip-library'); if (!container) return; const clipLibrary = getActiveClipLibrary(); container.innerHTML = ''; if (clipLibrary.length === 0) { container.innerHTML = `<p class="text-gray-400 text-center">No hay clips en el grupo activo.</p>`; return; }
+            clipLibrary.forEach(clip => { const el = document.createElement('div'); el.className = 'load-clip-action bg-gray-700 p-3 rounded-md flex items-center cursor-pointer hover:bg-gray-600 transition-colors'; el.dataset.clipName = clip.name; el.innerHTML = `<div class="flex items-center space-x-3 pointer-events-none"><div class="w-4 h-8 rounded" style="background-color:${clip.color};"></div><div><p class="font-medium">${clip.name}</p><p class="text-sm text-gray-400">Duración: ${formatTime(clip.duration)}</p></div></div>`; container.appendChild(el); });
+        }
+        
+        // --- LOGIC FUNCTIONS ---
+        function updateAndBroadcast() { renderAll(); broadcastState(); }
+        function loadClip(clipName, playerId) { if (players[playerId].isPlaying) stopPlayback(playerId); const clipData = getActiveClipLibrary().find(c => c.name === clipName); players[playerId].clip = clipData ? { ...clipData } : null; players[playerId].elapsedTime = 0; updateAndBroadcast(); }
+        function tick(playerId) { const p = players[playerId]; if (!p.isPlaying || !p.clip) return; p.elapsedTime++; if (p.elapsedTime >= p.clip.duration) { p.isLooping ? (p.elapsedTime = 0) : stopPlayback(playerId); } updateAndBroadcast(); }
         function togglePlayPause(playerId) { players[playerId].clip && (players[playerId].isPlaying ? pausePlayback(playerId) : startPlayback(playerId)); }
         function startPlayback(playerId) { const p = players[playerId]; if (p.isPlaying || !p.clip) return; if (p.elapsedTime >= p.clip.duration) p.elapsedTime = 0; p.isPlaying = true; p.intervalId = setInterval(() => tick(playerId), 1000); updateAndBroadcast(); }
         function pausePlayback(playerId) { const p = players[playerId]; if (!p.isPlaying) return; p.isPlaying = false; clearInterval(p.intervalId); p.intervalId = null; updateAndBroadcast(); }
         function stopPlayback(playerId) { const p = players[playerId]; if (!p.clip) return; if (p.isPlaying) pausePlayback(playerId); p.elapsedTime = 0; updateAndBroadcast(); }
         function toggleLoop(playerId) { players[playerId].isLooping = !players[playerId].isLooping; updateAndBroadcast(); }
-        function tick(playerId) { const p = players[playerId]; if (!p.isPlaying || !p.clip) return; p.elapsedTime++; if (p.elapsedTime >= p.clip.duration) { p.isLooping ? (p.elapsedTime = 0) : stopPlayback(playerId); } updateAndBroadcast(); }
-        function updateAndBroadcast() { renderAll(); broadcastState(); }
-
-        if (!document.body.classList.contains('pvw-mode')) {
-            const mainContent = document.getElementById('main-content');
-            document.getElementById('tab-control').addEventListener('click', () => { document.getElementById('view-control').style.display = 'block'; document.getElementById('view-editor').style.display = 'none'; document.getElementById('tab-control').classList.add('active'); document.getElementById('tab-editor').classList.remove('active'); });
-            document.getElementById('tab-editor').addEventListener('click', () => { document.getElementById('view-control').style.display = 'none'; document.getElementById('view-editor').style.display = 'block'; document.getElementById('tab-control').classList.remove('active'); document.getElementById('tab-editor').classList.add('active'); });
-            
-            mainContent.addEventListener('click', (e) => {
-                const target = e.target;
-                const controlPanel = target.closest('.player-control-panel');
-                
-                if (controlPanel && !target.closest('button')) {
-                    targetPlayerId = parseInt(controlPanel.dataset.playerId, 10);
-                    document.getElementById('target-disk-label').textContent = targetPlayerId + 1;
-                    renderPlayerControls();
-                }
-
-                if (target.closest('.load-clip-action')) { loadClip(target.closest('.load-clip-action').dataset.clipName, targetPlayerId); }
-                if (target.matches('.play-pause-btn')) { togglePlayPause(parseInt(target.dataset.playerId, 10)); }
-                if (target.matches('.stop-btn')) { stopPlayback(parseInt(target.dataset.playerId, 10)); }
-                if (target.matches('.loop-switch')) { toggleLoop(parseInt(target.dataset.playerId, 10)); }
-                if (target.matches('.delete-clip-btn')) { clipLibrary.splice(target.dataset.clipIndex, 1); saveClipsToStorage(); updateAndBroadcast(); }
-            });
-            
-            mainContent.addEventListener('input', (e) => { if(e.target.matches('.edit-clip-color')) { clipLibrary[e.target.dataset.clipIndex].color = e.target.value; saveClipsToStorage(); updateAndBroadcast(); } });
-
-            document.getElementById('add-clip-form').addEventListener('submit', (e) => {
-                e.preventDefault();
-                const name = document.getElementById('clip-name').value.trim();
-                const duration = parseInt(document.getElementById('clip-duration').value, 10);
-                if (name && duration > 0 && !clipLibrary.some(c => c.name === name)) {
-                    clipLibrary.push({ name, duration, color: getRandomColor() });
-                    saveClipsToStorage(); updateAndBroadcast(); e.target.reset();
-                } else { alert('Nombre de clip inválido, duplicado o duración incorrecta.'); }
-            });
-        }
         
         function formatTime(s) { const min = Math.floor(s/60); const sec = Math.floor(s%60); return `${String(min).padStart(2,'0')}:${String(sec).padStart(2,'0')}`; }
         function getRandomColor() { return `#${Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')}`; }
 
-        loadClipsFromStorage();
-        updateAndBroadcast();
-        if (document.body.classList.contains('pvw-mode')) { channel.postMessage('request_sync'); }
+        // --- EVENT LISTENERS (Control view only) ---
+        if (!isPvwMode) {
+            const mainContent = document.getElementById('main-content');
+            document.getElementById('tab-control').addEventListener('click', () => { document.getElementById('view-control').style.display = 'block'; document.getElementById('view-editor').style.display = 'none'; document.getElementById('tab-control').classList.add('active'); document.getElementById('tab-editor').classList.remove('active'); });
+            document.getElementById('tab-editor').addEventListener('click', () => { document.getElementById('view-control').style.display = 'none'; document.getElementById('view-editor').style.display = 'block'; document.getElementById('tab-control').classList.remove('active'); document.getElementById('tab-editor').classList.add('active'); });
+            document.getElementById('open-pvw-btn').addEventListener('click', () => { window.open(`${window.location.pathname}?view=pvw`, '_blank', 'noopener,noreferrer'); });
+            
+            mainContent.addEventListener('click', (e) => {
+                const target = e.target;
+                const controlPanel = target.closest('.player-control-panel');
+                if (controlPanel && !target.closest('button')) { targetPlayerId = parseInt(controlPanel.dataset.playerId, 10); document.getElementById('target-disk-label').textContent = targetPlayerId + 1; renderPlayerControls(); }
+                if (target.closest('.load-clip-action')) { loadClip(target.closest('.load-clip-action').dataset.clipName, targetPlayerId); }
+                if (target.matches('.play-pause-btn')) { togglePlayPause(parseInt(target.dataset.playerId, 10)); }
+                if (target.matches('.stop-btn')) { stopPlayback(parseInt(target.dataset.playerId, 10)); }
+                if (target.matches('.loop-switch')) { toggleLoop(parseInt(target.dataset.playerId, 10)); }
+                if (target.matches('.delete-clip-btn')) { getActiveClipLibrary().splice(target.dataset.clipIndex, 1); saveStateToStorage(); renderAll(); broadcastState(); }
+                if (target.matches('#create-group-btn')) {
+                    const newGroupName = document.getElementById('new-group-name').value.trim();
+                    if (newGroupName && !appState.clipGroups[newGroupName]) { appState.clipGroups[newGroupName] = []; appState.activeGroupName = newGroupName; document.getElementById('new-group-name').value = ''; saveStateToStorage(); renderAll(); broadcastState(); } else { alert('Nombre de grupo inválido o ya existe.'); }
+                }
+                 if (target.closest('#delete-group-btn')) { if (confirm(`¿Seguro que quieres borrar el grupo "${appState.activeGroupName}"? Esta acción no se puede deshacer.`)) { delete appState.clipGroups[appState.activeGroupName]; appState.activeGroupName = Object.keys(appState.clipGroups)[0] || ''; saveStateToStorage(); renderAll(); broadcastState(); } }
+            });
+            mainContent.addEventListener('change', (e) => { if (e.target.matches('#group-selector')) { appState.activeGroupName = e.target.value; saveStateToStorage(); renderAll(); broadcastState(); } });
+            mainContent.addEventListener('input', (e) => { if(e.target.matches('.edit-clip-color')) { getActiveClipLibrary()[e.target.dataset.clipIndex].color = e.target.value; saveStateToStorage(); renderAll(); broadcastState(); } });
+            mainContent.addEventListener('submit', (e) => {
+                if(e.target.id !== 'add-clip-form') return; e.preventDefault();
+                const name = document.getElementById('clip-name').value.trim(); const duration = parseInt(document.getElementById('clip-duration').value, 10); const activeLibrary = getActiveClipLibrary();
+                if (name && duration > 0 && !activeLibrary.some(c => c.name === name)) { activeLibrary.push({ name, duration, color: getRandomColor() }); saveStateToStorage(); renderAll(); broadcastState(); e.target.reset(); } else { alert('Nombre de clip inválido, duplicado o duración incorrecta.'); }
+            });
+            
+            // --- RESIZER LOGIC ---
+            const resizerV = document.getElementById('resizer-v'); const resizerH = document.getElementById('resizer-h');
+            const mainLayout = document.getElementById('main-layout'); const leftColumn = document.getElementById('left-column');
+            const pgmContainer = document.getElementById('pgm-container');
+            function resizeV(e) { const totalWidth = mainLayout.offsetWidth; const leftWidth = e.clientX - mainLayout.offsetLeft; const rightWidth = totalWidth - leftWidth - resizerV.offsetWidth; if(leftWidth > 200 && rightWidth > 200) { mainLayout.style.gridTemplateColumns = `${leftWidth}px ${resizerV.offsetWidth}px ${rightWidth}px`; } }
+            resizerV.addEventListener('mousedown', function(e) { e.preventDefault(); window.addEventListener('mousemove', resizeV); window.addEventListener('mouseup', function() { window.removeEventListener('mousemove', resizeV); }); });
+            function resizeH(e) { const totalHeight = leftColumn.offsetHeight; const pgmHeight = e.clientY - leftColumn.offsetTop; if(pgmHeight > 150 && (totalHeight - pgmHeight - resizerH.offsetHeight) > 150) { pgmContainer.style.flexBasis = `${pgmHeight}px`; } }
+            resizerH.addEventListener('mousedown', function(e) { e.preventDefault(); window.addEventListener('mousemove', resizeH); window.addEventListener('mouseup', function() { window.removeEventListener('mousemove', resizeH); }); });
+        }
+        
+        // --- INITIALIZATION ---
+        loadStateFromStorage();
+        renderAll();
+        if (isPvwMode) {
+             channel.postMessage('request_sync_full'); // Request initial full state
+        } else {
+            broadcastState(); // Announce initial state to any listening PVWs
+        }
     });
     </script>
 </body>
