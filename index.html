@@ -97,7 +97,11 @@
                 <div class="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 h-full">
                     <div class="md:col-span-1 bg-gray-800 p-6 rounded-lg flex flex-col gap-8">
                         <div><h2 class="text-2xl font-semibold mb-4">Gestión de Grupos</h2><div id="group-manager" class="space-y-4"></div></div>
-                        <div><h2 class="text-2xl font-semibold mb-4">Añadir Nuevo Clip</h2><form id="add-clip-form" class="space-y-4"></form></div>
+                        <div>
+                            <h2 class="text-2xl font-semibold mb-4">Añadir Clip</h2>
+                            <form id="add-clip-form" class="space-y-4"></form>
+                            <button type="button" id="open-import-modal-btn" class="w-full mt-4 bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-md">Importar en Lote...</button>
+                        </div>
                     </div>
                     <div class="md:col-span-2 bg-gray-800 p-6 rounded-lg flex flex-col">
                         <h2 class="text-2xl font-semibold mb-4">Clips en "<span id="current-group-name-label"></span>"</h2>
@@ -109,21 +113,26 @@
     </div>
     
     <div class="pvw-view h-screen w-screen p-2"><div id="preview-monitor" class="grid grid-cols-2 gap-2 w-full h-full"></div></div>
+    
+    <!-- Modal de Importación -->
+    <div id="import-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50" style="display: none;">
+        <div class="bg-gray-800 p-8 rounded-lg w-full max-w-lg shadow-2xl">
+            <h2 class="text-2xl font-bold mb-4">Importar Clips en Lote</h2>
+            <p class="text-gray-400 mb-4">Pega aquí los datos. El formato debe ser: <strong>Nombre [Tabulador] Duración (M:SS)</strong> por cada línea.</p>
+            <textarea id="bulk-import-textarea" class="w-full h-48 bg-gray-900 text-white rounded-md p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="LHR10JN2025007	0:03&#10;LHR09JN2025098	0:00"></textarea>
+            <div class="mt-6 flex justify-end gap-4">
+                <button id="close-import-modal-btn" type="button" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md">Cancelar</button>
+                <button id="import-clips-btn" type="button" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Importar</button>
+            </div>
+        </div>
+    </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- TU CONFIGURACIÓN DE FIREBASE ---
-        const USER_FIREBASE_CONFIG = {
-          apiKey: "AIzaSyBVxZ_iTU7xMk5HSFfS5b96HOYll7ZVzRc",
-          authDomain: "videos-38fcd.firebaseapp.com",
-          projectId: "videos-38fcd",
-          storageBucket: "videos-38fcd.appspot.com",
-          messagingSenderId: "376645646912",
-          appId: "1:376645646912:web:eaac3f44bb0392cd4bfda5"
-        };
+        const USER_FIREBASE_CONFIG = null;
 
         const urlParams = new URLSearchParams(window.location.search);
         const isPvwMode = urlParams.get('view') === 'pvw';
@@ -146,7 +155,7 @@
             const firebaseConfig = configFromPlatform || USER_FIREBASE_CONFIG;
         
             if (!firebaseConfig) {
-                errorElement.textContent = "Error: Configuración de Firebase no encontrada.";
+                errorElement.textContent = "Error: Configuración de Firebase no encontrada. Pega tu configuración en el archivo HTML.";
                 return;
             }
 
@@ -336,12 +345,52 @@
 
         if (!isPvwMode) {
             const mainContent = document.getElementById('main-content');
+            const importModal = document.getElementById('import-modal');
+
+            // Tabs
             document.getElementById('tab-control').addEventListener('click', () => { document.getElementById('view-control').style.display = 'block'; document.getElementById('view-editor').style.display = 'none'; document.getElementById('tab-control').classList.add('active'); document.getElementById('tab-editor').classList.remove('active'); });
             document.getElementById('tab-editor').addEventListener('click', () => { document.getElementById('view-control').style.display = 'none'; document.getElementById('view-editor').style.display = 'block'; document.getElementById('tab-control').classList.remove('active'); document.getElementById('tab-editor').classList.add('active'); });
             document.getElementById('open-pvw-btn').addEventListener('click', () => { window.open(`${window.location.pathname}?view=pvw`, '_blank', 'noopener,noreferrer'); });
             
+            // PGM Sizing
             document.getElementById('pgm-size-increase').addEventListener('click', () => { if (pgmScaleIndex < pgmScales.length - 1) { pgmScaleIndex++; renderPgmMonitor(); } });
             document.getElementById('pgm-size-decrease').addEventListener('click', () => { if (pgmScaleIndex > 0) { pgmScaleIndex--; renderPgmMonitor(); } });
+
+            // Modal
+            document.getElementById('open-import-modal-btn').addEventListener('click', () => importModal.style.display = 'flex');
+            document.getElementById('close-import-modal-btn').addEventListener('click', () => importModal.style.display = 'none');
+            document.getElementById('import-clips-btn').addEventListener('click', () => {
+                const text = document.getElementById('bulk-import-textarea').value;
+                const activeLibrary = getActiveClipLibrary();
+                const existingNames = new Set(activeLibrary.map(c => c.name));
+                const newClips = [];
+
+                text.split('\n').forEach(line => {
+                    const parts = line.split('\t');
+                    if (parts.length !== 2) return;
+
+                    const name = parts[0].trim();
+                    if (!name || existingNames.has(name)) return;
+
+                    const durationParts = parts[1].split(':');
+                    const minutes = parseInt(durationParts[0], 10) || 0;
+                    const seconds = parseInt(durationParts[1], 10) || 0;
+                    let totalSeconds = (minutes * 60) + seconds;
+
+                    if (totalSeconds === 0) totalSeconds = 30;
+
+                    newClips.push({ name, duration: totalSeconds, color: getRandomColor() });
+                    existingNames.add(name);
+                });
+
+                if(newClips.length > 0) {
+                    activeLibrary.push(...newClips);
+                    updateStateInFirestore();
+                }
+                document.getElementById('bulk-import-textarea').value = '';
+                importModal.style.display = 'none';
+            });
+
 
             mainContent.addEventListener('click', (e) => {
                 const target = e.target;
