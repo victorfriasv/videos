@@ -40,10 +40,6 @@
         .pvw-play-indicator { background-color: #22C55E; color: white; font-size: 0.7rem; font-weight: bold; padding: 1px 5px; border-radius: 3px; }
         select { background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e"); background-position: right 0.5rem center; background-repeat: no-repeat; background-size: 1.5em 1.5em; -webkit-appearance: none; -moz-appearance: none; appearance: none; }
         
-        /* Estilos para redimensionar */
-        .resizer { background: #374151; user-select: none; }
-        .resizer-v { cursor: col-resize; width: 6px; }
-        .resizer-h { cursor: row-resize; height: 6px; }
     </style>
 </head>
 <body class="p-0">
@@ -63,19 +59,25 @@
         <main id="main-content" class="flex-grow min-h-0">
             <!-- Pestaña de Control y PGM -->
             <div id="view-control" class="h-full" style="display: block;">
-                <div id="main-layout" class="grid gap-6 h-full" style="grid-template-columns: 2fr 6px 1fr;">
-                    <div id="left-column" class="flex flex-col gap-6 min-h-0">
-                        <div id="pgm-container" class="bg-gray-900/50 p-4 rounded-lg" style="flex-basis: 50%;">
-                            <h2 class="text-2xl font-semibold mb-4 text-center">Salida Program (PGM)</h2>
-                            <div id="program-monitor" class="grid grid-cols-2 gap-2"></div>
+                <div id="main-layout" class="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
+                    <!-- Columna Izquierda: Controles y PGM (scrollable) -->
+                    <div id="left-column" class="flex flex-col gap-6 min-h-0 overflow-y-auto pr-2">
+                        <div class="bg-gray-900/50 p-4 rounded-lg">
+                            <h2 class="text-2xl font-semibold mb-4">Controles de Discos</h2>
+                            <div id="player-controls-container" class="grid grid-cols-1 md:grid-cols-2 gap-5"></div>
                         </div>
-                        <div id="resizer-h" class="resizer resizer-h rounded-full"></div>
-                        <div id="controls-container" class="bg-gray-900/50 p-4 rounded-lg flex-1 min-h-0 flex flex-col">
-                            <h2 class="text-2xl font-semibold mb-4 flex-shrink-0">Controles de Discos</h2>
-                            <div id="player-controls-container" class="grid grid-cols-1 md:grid-cols-2 gap-5 flex-grow"></div>
+                        <div class="bg-gray-900/50 p-4 rounded-lg">
+                            <div class="flex justify-center items-center gap-4 mb-4">
+                                <h2 class="text-2xl font-semibold text-center">Salida Program (PGM)</h2>
+                                <div class="flex gap-2">
+                                     <button id="pgm-size-decrease" title="Reducir" class="bg-gray-700 hover:bg-gray-600 rounded-full w-7 h-7 flex items-center justify-center text-xl font-bold">-</button>
+                                     <button id="pgm-size-increase" title="Aumentar" class="bg-gray-700 hover:bg-gray-600 rounded-full w-7 h-7 flex items-center justify-center text-xl font-bold">+</button>
+                                </div>
+                            </div>
+                            <div id="program-monitor" class="grid grid-cols-2 gap-2 transition-transform duration-300 origin-top"></div>
                         </div>
                     </div>
-                    <div id="resizer-v" class="resizer resizer-v rounded-full"></div>
+                    <!-- Columna Derecha: Librería (scrollable) -->
                     <div id="right-column" class="bg-gray-900/50 p-4 rounded-lg flex flex-col min-h-0">
                          <h2 class="text-2xl font-semibold mb-4 flex-shrink-0">Librería (Cargar en Disco <span id="target-disk-label">1</span>)</h2>
                          <div id="control-clip-library" class="flex-grow overflow-y-auto space-y-3 pr-2"></div>
@@ -114,6 +116,8 @@
         let appState = { clipGroups: {}, activeGroupName: '' };
         let players = Array(4).fill(null).map((_, i) => ({ id: i, clip: null, isPlaying: false, isLooping: false, elapsedTime: 0, intervalId: null }));
         let targetPlayerId = 0;
+        let pgmScaleIndex = 2; // Índice para el array de escalas de PGM
+        const pgmScales = [0.75, 0.85, 1.0, 1.1, 1.25]; // Diferentes niveles de zoom
 
         // --- STATE & SYNC ---
         function broadcastState() {
@@ -166,7 +170,9 @@
         }
 
         function renderPgmMonitor() {
-            const container = document.getElementById('program-monitor'); if (!container) return; container.innerHTML = '';
+            const container = document.getElementById('program-monitor'); if (!container) return;
+            container.style.transform = `scale(${pgmScales[pgmScaleIndex]})`;
+            container.innerHTML = '';
             players.forEach(player => {
                 const screen = document.createElement('div');
                 screen.className = `monitor-screen ${player.isPlaying ? 'playing' : (player.clip && player.elapsedTime > 0 ? 'paused' : '')}`;
@@ -238,6 +244,19 @@
             document.getElementById('tab-editor').addEventListener('click', () => { document.getElementById('view-control').style.display = 'none'; document.getElementById('view-editor').style.display = 'block'; document.getElementById('tab-control').classList.remove('active'); document.getElementById('tab-editor').classList.add('active'); });
             document.getElementById('open-pvw-btn').addEventListener('click', () => { window.open(`${window.location.pathname}?view=pvw`, '_blank', 'noopener,noreferrer'); });
             
+            document.getElementById('pgm-size-increase').addEventListener('click', () => {
+                if (pgmScaleIndex < pgmScales.length - 1) {
+                    pgmScaleIndex++;
+                    renderPgmMonitor();
+                }
+            });
+            document.getElementById('pgm-size-decrease').addEventListener('click', () => {
+                 if (pgmScaleIndex > 0) {
+                    pgmScaleIndex--;
+                    renderPgmMonitor();
+                }
+            });
+
             mainContent.addEventListener('click', (e) => {
                 const target = e.target;
                 const controlPanel = target.closest('.player-control-panel');
@@ -260,22 +279,13 @@
                 const name = document.getElementById('clip-name').value.trim(); const duration = parseInt(document.getElementById('clip-duration').value, 10); const activeLibrary = getActiveClipLibrary();
                 if (name && duration > 0 && !activeLibrary.some(c => c.name === name)) { activeLibrary.push({ name, duration, color: getRandomColor() }); saveStateToStorage(); renderAll(); broadcastState(); e.target.reset(); } else { alert('Nombre de clip inválido, duplicado o duración incorrecta.'); }
             });
-            
-            // --- RESIZER LOGIC ---
-            const resizerV = document.getElementById('resizer-v'); const resizerH = document.getElementById('resizer-h');
-            const mainLayout = document.getElementById('main-layout'); const leftColumn = document.getElementById('left-column');
-            const pgmContainer = document.getElementById('pgm-container');
-            function resizeV(e) { const totalWidth = mainLayout.offsetWidth; const leftWidth = e.clientX - mainLayout.offsetLeft; const rightWidth = totalWidth - leftWidth - resizerV.offsetWidth; if(leftWidth > 200 && rightWidth > 200) { mainLayout.style.gridTemplateColumns = `${leftWidth}px ${resizerV.offsetWidth}px ${rightWidth}px`; } }
-            resizerV.addEventListener('mousedown', function(e) { e.preventDefault(); window.addEventListener('mousemove', resizeV); window.addEventListener('mouseup', function() { window.removeEventListener('mousemove', resizeV); }); });
-            function resizeH(e) { const totalHeight = leftColumn.offsetHeight; const pgmHeight = e.clientY - leftColumn.offsetTop; if(pgmHeight > 150 && (totalHeight - pgmHeight - resizerH.offsetHeight) > 150) { pgmContainer.style.flexBasis = `${pgmHeight}px`; } }
-            resizerH.addEventListener('mousedown', function(e) { e.preventDefault(); window.addEventListener('mousemove', resizeH); window.addEventListener('mouseup', function() { window.removeEventListener('mousemove', resizeH); }); });
         }
         
         // --- INITIALIZATION ---
         loadStateFromStorage();
         renderAll();
         if (isPvwMode) {
-             channel.postMessage('request_sync_full'); // Request initial full state
+             channel.postMessage('request_sync_full'); // Request initial full state from a control view
         } else {
             broadcastState(); // Announce initial state to any listening PVWs
         }
