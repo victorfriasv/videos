@@ -120,13 +120,14 @@
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // --- CONFIGURACIÓN Y ESTADO INICIAL ---
         const USER_FIREBASE_CONFIG = {
-          apiKey: "AIzaSyBVxZ_iTU7xMk5HSFfS5b96HOYll7ZVzRc",
-          authDomain: "videos-38fcd.firebaseapp.com",
-          projectId: "videos-38fcd",
-          storageBucket: "videos-38fcd.appspot.com",
-          messagingSenderId: "376645646912",
-          appId: "1:376645646912:web:eaac3f44bb0392cd4bfda5"
+            apiKey: "AIzaSyBVxZ_iTU7xMk5HSFfS5b96HOYll7ZVzRc",
+            authDomain: "videos-38fcd.firebaseapp.com",
+            projectId: "videos-38fcd",
+            storageBucket: "videos-38fcd.appspot.com",
+            messagingSenderId: "376645646912",
+            appId: "1:376645646912:web:eaac3f44bb0392cd4bfda5"
         };
 
         const urlParams = new URLSearchParams(window.location.search);
@@ -140,6 +141,7 @@
         let db, auth, stateDocRef, unsubscribe;
         let connectionTimeout;
         
+        // --- CONEXIÓN CON FIREBASE ---
         async function initializeFirebase() {
             const loadingOverlay = document.getElementById('loading-overlay');
             const errorElement = document.getElementById('loading-error');
@@ -180,6 +182,7 @@
         
         async function updateStateInFirestore() {
             if (!stateDocRef || isPvwMode) return;
+            // Guardamos el estado sin los IDs de intervalo, que son solo locales
             const stateToSave = {
                 appState,
                 players: players.map(p => ({ ...p, intervalId: null })) 
@@ -206,15 +209,16 @@
                         const localPlayer = players[i];
                         if (!localPlayer) return;
 
-                        const wasPlaying = localPlayer.isPlaying;
+                        // Conservamos el ID del intervalo local al sincronizar
+                        const localIntervalId = localPlayer.intervalId;
                         Object.assign(localPlayer, remotePlayer);
+                        localPlayer.intervalId = localIntervalId;
                         
-                        if (localPlayer.isPlaying && !wasPlaying) {
-                            clearInterval(localPlayer.intervalId);
-                            localPlayer.intervalId = setInterval(() => tick(localPlayer.id), 1000);
-                        } else if (!localPlayer.isPlaying && wasPlaying) {
-                            clearInterval(localPlayer.intervalId);
-                            localPlayer.intervalId = null;
+                        // Sincronizamos el estado del temporizador en todos los clientes
+                        if (localPlayer.isPlaying) {
+                            startLocalTimer(localPlayer.id);
+                        } else {
+                            stopLocalTimer(localPlayer.id);
                         }
                     });
                 } else if (!isPvwMode) {
@@ -240,6 +244,7 @@
         
         function getActiveClipLibrary() { return appState.clipGroups ? (appState.clipGroups[appState.activeGroupName] || []) : []; }
 
+        // --- FUNCIONES DE RENDERIZADO ---
         function renderAll() {
             if (isPvwMode) {
                 renderPvwMonitor();
@@ -275,7 +280,7 @@
                 
                 let miniMonitorContent = '<div class="text-gray-500 flex items-center justify-center h-full text-xs">VACÍO</div>';
                 if (player.clip) {
-                    const progress = (player.elapsedTime / player.clip.duration) * 100;
+                    const progress = player.clip.duration > 0 ? (player.elapsedTime / player.clip.duration) * 100 : 0;
                     const remaining = player.clip.duration - player.elapsedTime;
                     miniMonitorContent = `<div class="screen-overlay text-white"><div class="flex justify-between items-start text-xs"><span class="font-bold truncate pr-1">${player.clip.name}</span></div><div><div class="progress-bar mb-1"><div class="progress-bar-inner" style="width: ${progress}%"></div></div><div class="flex justify-between text-gray-300" style="font-size: 0.65rem;"><span>${formatTime(player.elapsedTime)}</span><span>-${formatTime(remaining < 0 ? 0 : remaining)}</span></div></div></div>`;
                 }
@@ -311,20 +316,106 @@
             clipLibrary.forEach(clip => { const el = document.createElement('div'); el.className = 'load-clip-action bg-gray-700 p-2 rounded-md flex items-center cursor-pointer hover:bg-gray-600 transition-colors'; el.dataset.clipName = clip.name; el.innerHTML = `<div class="flex items-center space-x-3 pointer-events-none flex-grow min-w-0"><div class="w-2 h-6 rounded flex-shrink-0" style="background-color:${clip.color};"></div><p class="font-medium truncate">${clip.name} <span class="text-sm text-gray-400 font-normal">(${formatTime(clip.duration)})</span></p></div>`; container.appendChild(el); });
         }
         
-        // --- LOGIC FUNCTIONS ---
-        function tick(playerId) { const p = players[playerId]; if (!p.isPlaying || !p.clip) return; p.elapsedTime++; if (p.elapsedTime >= p.clip.duration) { p.isLooping ? (p.elapsedTime = 0, updateStateInFirestore()) : stopPlayback(playerId); } else { renderAll(); } }
-        function unloadClip(playerId) { const p = players[playerId]; if (!p.clip) return; if (p.isPlaying) pausePlayback(playerId); else { p.clip = null; p.elapsedTime = 0; p.isLooping = false; updateStateInFirestore(); } }
-        function loadClip(clipName, playerId) { players[playerId].clip = getActiveClipLibrary().find(c => c.name === clipName) ? { ...getActiveClipLibrary().find(c => c.name === clipName) } : null; players[playerId].elapsedTime = 0; if(players[playerId].isPlaying) pausePlayback(playerId); else updateStateInFirestore(); }
-        function togglePlayPause(playerId) { players[playerId].clip && (players[playerId].isPlaying ? pausePlayback(playerId) : startPlayback(playerId)); }
-        function startPlayback(playerId) { const p = players[playerId]; if (p.isPlaying || !p.clip) return; if (p.elapsedTime >= p.clip.duration) p.elapsedTime = 0; p.isPlaying = true; updateStateInFirestore(); }
-        function pausePlayback(playerId) { const p = players[playerId]; if (!p.isPlaying) return; p.isPlaying = false; updateStateInFirestore(); }
-        function stopPlayback(playerId) { const p = players[playerId]; if (!p.clip) return; if (p.isPlaying) p.isPlaying = false; p.elapsedTime = 0; updateStateInFirestore(); }
-        function toggleLoop(playerId) { players[playerId].isLooping = !players[playerId].isLooping; updateStateInFirestore(); }
+        // --- LÓGICA DE REPRODUCCIÓN Y TEMPORIZADOR LOCAL ---
         
+        function localTick(playerId) {
+            const p = players[playerId];
+            if (!p || !p.isPlaying || !p.clip) {
+                stopLocalTimer(playerId); // Medida de seguridad
+                return;
+            }
+            p.elapsedTime++;
+            if (p.elapsedTime >= p.clip.duration) {
+                if (p.isLooping) {
+                    p.elapsedTime = 0;
+                    updateStateInFirestore(); // Sincronizar el reinicio del loop
+                } else {
+                    stopPlayback(playerId); // stopPlayback se encarga de todo
+                }
+            }
+            // Actualizar la UI localmente en cada tick
+            renderAll();
+        }
+
+        function startLocalTimer(playerId) {
+            const p = players[playerId];
+            if (!p) return;
+            // Evitar múltiples intervalos para el mismo reproductor
+            if (p.intervalId) clearInterval(p.intervalId);
+            p.intervalId = setInterval(() => localTick(playerId), 1000);
+        }
+
+        function stopLocalTimer(playerId) {
+            const p = players[playerId];
+            if (p && p.intervalId) {
+                clearInterval(p.intervalId);
+                p.intervalId = null;
+            }
+        }
+
+        function unloadClip(playerId) {
+            const p = players[playerId];
+            if (!p.clip) return;
+            stopLocalTimer(playerId); // Detener el temporizador local
+            p.clip = null;
+            p.isPlaying = false;
+            p.elapsedTime = 0;
+            p.isLooping = false;
+            updateStateInFirestore(); // Notificar a los demás
+        }
+
+        function loadClip(clipName, playerId) {
+            const p = players[playerId];
+            stopLocalTimer(playerId); // Detener cualquier temporizador anterior
+            p.clip = getActiveClipLibrary().find(c => c.name === clipName) ? { ...getActiveClipLibrary().find(c => c.name === clipName) } : null;
+            p.elapsedTime = 0;
+            p.isPlaying = false;
+            updateStateInFirestore(); // Notificar a los demás
+        }
+
+        function togglePlayPause(playerId) {
+            const p = players[playerId];
+            if (!p.clip) return;
+            p.isPlaying ? pausePlayback(playerId) : startPlayback(playerId);
+        }
+
+        function startPlayback(playerId) {
+            const p = players[playerId];
+            if (p.isPlaying || !p.clip) return;
+            if (p.elapsedTime >= p.clip.duration) p.elapsedTime = 0;
+            p.isPlaying = true;
+            startLocalTimer(playerId); // Iniciar temporizador local INMEDIATAMENTE
+            updateStateInFirestore();  // Luego, notificar a los demás
+        }
+
+        function pausePlayback(playerId) {
+            const p = players[playerId];
+            if (!p.isPlaying) return;
+            p.isPlaying = false;
+            stopLocalTimer(playerId); // Detener temporizador local INMEDIATAMENTE
+            updateStateInFirestore(); // Luego, notificar a los demás
+        }
+
+        function stopPlayback(playerId) {
+            const p = players[playerId];
+            if (!p.clip) return;
+            p.isPlaying = false;
+            p.elapsedTime = 0;
+            stopLocalTimer(playerId); // Detener temporizador local INMEDIATAMENTE
+            updateStateInFirestore(); // Luego, notificar a los demás
+        }
+
+        function toggleLoop(playerId) {
+            players[playerId].isLooping = !players[playerId].isLooping;
+            updateStateInFirestore();
+        }
+        
+        // --- FUNCIONES UTILITARIAS ---
         function formatTime(s) { const min = Math.floor(s/60); const sec = Math.floor(s%60); return `${String(min).padStart(2,'0')}:${String(sec).padStart(2,'0')}`; }
         function getRandomColor() { return `#${Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')}`; }
         function parseDuration(timeString) { const str = String(timeString).trim(); if (str.includes(':')) { const parts = str.split(':'); const minutes = parseInt(parts[0], 10) || 0; const seconds = parseInt(parts[1], 10) || 0; return (minutes * 60) + seconds; } return parseInt(str, 10) || 0; }
-
+        
+        // --- MANEJADORES DE EVENTOS ---
         if (!isPvwMode) {
             const mainContent = document.getElementById('main-content');
             const importModal = document.getElementById('import-modal');
@@ -386,6 +477,7 @@
             });
         }
         
+        // --- INICIALIZACIÓN ---
         initializeFirebase();
     </script>
 </body>
